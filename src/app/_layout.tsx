@@ -38,9 +38,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Stack, router } from 'expo-router';
-import { raspGuard } from '../services/RASPGuard';
+import { raspGuard } from '../rasp/RASPGuard';
 import { sessionLockService } from '../services/SessionLockService';
 import { threatMonitorService } from '../services/ThreatMonitorService';
+import { threatAgent } from '../modules/threat/ThreatAgent';
+import { threatStore } from '../modules/threat/ThreatStore';
+import { networkStore } from '../modules/network/NetworkStore';
 import { colors } from '../theme/colors';
 
 // ---------------------------------------------------------------------------
@@ -97,7 +100,22 @@ export default function RootLayout() {
 
         if (!isMounted) return;
 
-        // Step 3: Subscribe to session lock events so we can redirect to /auth.
+        // Step 3: Hydrate Phase 2 stores from encrypted SQLite cache.
+        // These run in parallel — failures are non-fatal (stores degrade gracefully).
+        await Promise.allSettled([
+          threatStore.hydrate(),
+          networkStore.hydrate(),
+        ]);
+
+        if (!isMounted) return;
+
+        // Step 4: Register Phase 2 background threat agent task.
+        // Gracefully degrades when expo-task-manager is not installed.
+        threatAgent.registerBackgroundTask();
+
+        if (!isMounted) return;
+
+        // Step 5: Subscribe to session lock events so we can redirect to /auth.
         // Requirement 26.4
         sessionLockService.onLock(handleSessionLock);
 

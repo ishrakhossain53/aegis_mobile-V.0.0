@@ -57,7 +57,7 @@ export const ModuleHealthBar: React.FC<ModuleHealthBarProps> = ({
 }) => {
   const clampedScore = Math.max(0, Math.min(100, score));
   const fillColor = getScoreColor(clampedScore);
-  const fillPercent = `${clampedScore}%`;
+  const fillPercent: `${number}%` = `${clampedScore}%`;
 
   return (
     <TouchableOpacity
