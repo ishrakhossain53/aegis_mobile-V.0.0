@@ -1,0 +1,40 @@
+# Expo CLI generated
+expo-env.d.ts
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.expo/
+
+# Environment & secrets — NEVER commit these
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.keystore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Native build artifacts
+android/
+ios/
+*.jks
+*.p8
+
+# Test coverage
+coverage/

@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Aegis",
+    "slug": "aegis-mobile-app",
+    "version": "1.0.0",
+    "scheme": "aegis",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "com.aegis.cybersecurity",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.aegis.cybersecurity",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0F"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Aegis to use Face ID for authentication."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
