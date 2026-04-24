@@ -1880,3 +1880,291 @@ const DOH_PROVIDERS: Record<DoHProvider, DoHProviderConfig> = {
 *For any* outgoing HTTP request made by the Application to an external API, the request URL, headers, and body SHALL not contain any plaintext email address, username, password, passkey, TOTP seed, or API key belonging to the user.
 
 **Validates: Requirements 15.1, 15.2**
+
+---
+
+## Phase 2: Threat & Network Modules
+
+Phase 2 introduces a dedicated module layer (`src/modules/`), a cert-pinned API layer (`src/api/`), an enhanced RASP guard (`src/rasp/`), and a Settings screen. The Phase 1 `src/services/` layer is unchanged — Phase 2 extends it without replacing it.
+
+### Updated File Structure
+
+```
+src/
+├── services/                         # Phase 1 (unchanged)
+│   ├── RASPGuard.ts                  # Re-export shim → src/rasp/RASPGuard.ts
+│   └── api/
+│       ├── ThreatIntelAPI.ts         # Canonical implementation (tested)
+│       └── DoHResolver.ts            # Canonical implementation (tested)
+├── modules/                          # Phase 2 feature modules
+│   ├── threat/
+│   │   ├── ThreatAgent.ts            # Background headless task + anomaly scoring
+│   │   └── ThreatStore.ts            # Reactive store → encrypted SQLite
+│   └── network/
+│       ├── NetworkInspector.ts       # ARP / rogue AP / SSL anomaly detection
+│       └── NetworkStore.ts           # Reactive store with offline cache
+├── api/                              # Phase 2 re-export shims
+│   ├── certificatePinning.ts         # pinnedFetch interceptor
+│   ├── ThreatIntelAPI.ts             # Re-exports from services/api/
+│   └── DoHResolver.ts                # Re-exports from services/api/
+└── rasp/                             # Phase 2 enhanced RASP guard
+    └── RASPGuard.ts                  # Vault/crypto gating + tamper detection
+```
+
+### Architecture Additions
+
+```mermaid
+graph TB
+    subgraph "Phase 2 — Module Layer"
+        TA[ThreatAgent\nBackground Task + Anomaly Scoring]
+        TS[ThreatStore\nReactive SQLite-persisted Store]
+        NI[NetworkInspector\nWi-Fi / ARP / Rogue AP / SSL]
+        NS[NetworkStore\nReactive Offline Cache]
+    end
+
+    subgraph "Phase 2 — API Layer"
+        CP[certificatePinning\npinnedFetch interceptor]
+        TIA[src/api/ThreatIntelAPI\nRe-export shim]
+        DOH[src/api/DoHResolver\nRe-export shim]
+    end
+
+    subgraph "Phase 2 — RASP Layer"
+        RG2[src/rasp/RASPGuard\nVault/Crypto Op Gating + Tamper Detection]
+        RG1[src/services/RASPGuard\nRe-export shim → rasp/RASPGuard]
+    end
+
+    TA --> RG2
+    TA --> TS
+    NI --> RG2
+    NI --> NS
+    TIA --> CP
+    DOH --> CP
+    RG1 --> RG2
+```
+
+---
+
+### Component 13: ThreatAgent
+
+**File**: `src/modules/threat/ThreatAgent.ts`
+
+**Purpose**: Background headless task and rule-based anomaly scoring engine. All processing is on-device — no telemetry leaves the device.
+
+**Interface**:
+```typescript
+interface IThreatAgent {
+  registerBackgroundTask(): void;
+  runAnomalyScoring(): Promise<number>; // Returns 0–100, RASP-gated
+  collectTelemetry(): Promise<DeviceTelemetry>;
+}
+```
+
+**Anomaly Rules**:
+
+| Rule ID | Trigger | Score | Threat Type | Severity |
+|---|---|---|---|---|
+| `device_compromise` | Root/jailbreak | 100 | rootkit | critical |
+| `code_signature_invalid` | Bundle ID mismatch | 90 | privilege_escalation | high |
+| `debugger_attachment` | Debugger attached (prod) | 80 | privilege_escalation | high |
+| `emulator_detected` | Running on emulator | 50 | suspicious_network | medium |
+| `excessive_network_activity` | >50 resource entries | 40 | data_exfiltration | medium |
+
+**Scoring**: `max(rule contributions)` clamped to [0, 100]. Max-contribution prevents double-counting.
+
+**Background Task**: Registered as `AEGIS_THREAT_AGENT` via `expo-task-manager`. Gracefully degrades when not installed.
+
+---
+
+### Component 14: ThreatStore
+
+**File**: `src/modules/threat/ThreatStore.ts`
+
+**Purpose**: Reactive in-memory store with write-through persistence to encrypted SQLite.
+
+**Interface**:
+```typescript
+interface IThreatStore {
+  getState(): ThreatStoreState;
+  subscribe(fn: (state: ThreatStoreState) => void): () => void;
+  hydrate(): Promise<void>;
+  addThreat(threat: Omit<Threat, 'id'>): Promise<Threat>;
+  resolveThreats(ids: string[]): Promise<void>;
+  getActiveThreats(): Threat[];
+  getAllThreats(): Threat[];
+  clearResolvedThreats(): Promise<void>;
+}
+
+interface ThreatStoreState {
+  threats: Threat[];
+  hydrated: boolean;
+  threatLevel: ThreatLevel;
+}
+```
+
+**RASP gating**: `addThreat` and `resolveThreats` call `raspGuard.preOperationCheck()` before any write.
+
+---
+
+### Component 15: NetworkInspector
+
+**File**: `src/modules/network/NetworkInspector.ts`
+
+**Purpose**: Comprehensive network security assessment extending `NetworkService`.
+
+**Interface**:
+```typescript
+interface INetworkInspector {
+  inspect(): Promise<NetworkInspectionReport>; // RASP-gated, persists to NetworkStore
+  assessWiFi(): Promise<WiFiAssessment | null>;
+  detectARPSpoofing(): Promise<ARPSpoofingResult>;
+  fingerprintRogueAP(): Promise<RogueAPResult>;
+  detectSSLAnomalies(): Promise<SSLAnomalyResult>;
+}
+```
+
+**Detection Capabilities**:
+
+| Check | Method | Indicators |
+|---|---|---|
+| Wi-Fi encryption | NetInfo + heuristic | WEP/none → insecure; WPA → advisory |
+| ARP spoofing | Gateway probe + redirect check | Unexpected redirect host |
+| Rogue AP | BSSID/SSID/signal/frequency | Null BSSID; short SSID; signal >-30 dBm; open 2.4 GHz |
+| SSL anomaly | Multi-endpoint HTTPS probe | Certificate error; TLS handshake failure |
+
+---
+
+### Component 16: NetworkStore
+
+**File**: `src/modules/network/NetworkStore.ts`
+
+**Purpose**: Reactive store for network security state with offline cache in encrypted SQLite.
+
+**Interface**:
+```typescript
+interface INetworkStore {
+  getState(): NetworkStoreState;
+  subscribe(fn: (state: NetworkStoreState) => void): () => void;
+  hydrate(): Promise<void>;
+  updateNetworkStatus(status: NetworkStatus): Promise<void>;
+  updateMITMResult(result: MITMResult): Promise<void>;
+  updateLastScan(report: NetworkInspectionReport): Promise<void>;
+  setScanning(scanning: boolean): void;
+  setOffline(isOffline: boolean): void;
+  clearCache(): Promise<void>;
+}
+```
+
+**Offline cache**: `INSERT OR REPLACE` upsert into `network_cache (key, value, updated_at)`.
+
+---
+
+### Component 17: Certificate Pinning
+
+**File**: `src/api/certificatePinning.ts`
+
+**Pinned Hosts**:
+
+| Host | Subdomain match | Usage |
+|---|---|---|
+| `www.virustotal.com` | No | ThreatIntelAPI |
+| `haveibeenpwned.com` | No | BreachAPI |
+| `cloudflare-dns.com` | Yes | DoH Cloudflare |
+| `dns.google` | No | DoH Google |
+| `dns.quad9.net` | No | DoH Quad9 |
+
+**Validation layers**:
+1. HTTPS-only — all HTTP requests rejected unconditionally
+2. Host allowlist — requests to unpinned hosts rejected unconditionally
+3. Certificate fingerprint — via `react-native-ssl-pinning` when installed; hostname-only fallback with warning
+
+---
+
+### Component 18: Phase 2 RASPGuard
+
+**File**: `src/rasp/RASPGuard.ts`
+
+**Additional interface methods** (superset of Phase 1):
+```typescript
+interface IRASPGuard {
+  // ... all Phase 1 methods ...
+  gateVaultOperation(operationName: string): Promise<void>;   // throws on failure
+  gateCryptoOperation(operationName: string): Promise<void>;  // throws on failure
+  detectTampering(): Promise<boolean>;                        // prototype + JSON checks
+}
+```
+
+**Violation types** (superset of Phase 1):
+
+| Violation | Threat Level |
+|---|---|
+| `debugger_attached` | high |
+| `device_compromised` | high |
+| `code_signature_invalid` | high |
+| `tamper_detected` | high |
+| `emulator_detected` | medium |
+
+**Consolidation**: `src/services/RASPGuard.ts` is now a re-export shim pointing to `src/rasp/RASPGuard.ts`. All Phase 1 services automatically use the Phase 2 enhanced implementation.
+
+---
+
+### Component 19: Settings Screen
+
+**File**: `src/app/(tabs)/settings.tsx`
+
+**Purpose**: Secure API key management — keys stored in device keychain, never displayed after saving.
+
+**Tab**: Registered in `_layout.tsx` as the 6th tab with ⚙️ gear icon.
+
+**Supported keys**:
+- `hibp_api_key` — HaveIBeenPwned API key for breach monitoring
+- `threat_intel_api_key` — VirusTotal API key for threat intelligence
+
+---
+
+### Phase 2 Correctness Properties
+
+### Property 26: Anomaly Score Bounds
+
+*For any* invocation of `ThreatAgent.runAnomalyScoring()`, the returned score SHALL be an integer between 0 and 100 inclusive.
+
+**Validates: Requirements 30.2**
+
+---
+
+### Property 27: ThreatStore Write-Through Consistency
+
+*For any* threat added via `ThreatStore.addThreat()`, the threat SHALL be retrievable from both the in-memory state and the encrypted SQLite database with identical field values.
+
+**Validates: Requirements 30.3, 32.2**
+
+---
+
+### Property 28: Certificate Pinning Enforcement
+
+*For any* request made via `pinnedFetch` to a non-HTTPS URL or to a host not in the pin registry, the request SHALL be rejected before any network connection is established.
+
+**Validates: Requirements 31.1, 31.2**
+
+---
+
+### Property 29: Vault Operation Gating
+
+*For any* call to `RASPGuard.gateVaultOperation()` while `preOperationCheck()` returns a failure, the method SHALL throw an error and the vault operation SHALL NOT proceed.
+
+**Validates: Requirements 31.3**
+
+---
+
+### Property 30: NetworkStore Offline Cache Consistency
+
+*For any* network scan result persisted via `NetworkStore.updateLastScan()`, hydrating the store from the database SHALL restore a state where `lastScanResult` and `lastScanAt` match the persisted values.
+
+**Validates: Requirements 32.1**
+
+---
+
+### Property 31: Rogue AP Risk Classification
+
+*For any* access point with two or more rogue AP indicators detected by `NetworkInspector.fingerprintRogueAP()`, the returned `riskLevel` SHALL be `'high'`.
+
+**Validates: Requirements 33.4**

@@ -462,3 +462,77 @@ Aegis is a privacy-first, on-device personal cybersecurity mobile application fo
 3. THE Audit_Screen SHALL support sorting the app list by risk score, application name, and install date.
 4. WHEN an app card is tapped, THE Audit_Screen SHALL open a permission detail sheet for that application.
 5. THE Audit_Screen SHALL provide a re-audit action that triggers a fresh permission scan and refreshes the displayed results.
+
+---
+
+### Requirement 30: Background Threat Agent
+
+**User Story:** As a user, I want the app to continuously score device anomalies in the background using on-device rules, so that threats are detected even when I'm not actively using the app.
+
+#### Acceptance Criteria
+
+1. THE ThreatAgent SHALL register a background headless task that executes anomaly scoring at a minimum interval of 60 seconds.
+2. THE ThreatAgent SHALL compute an anomaly score between 0 and 100 (inclusive) by evaluating rule-based checks against on-device telemetry.
+3. WHEN a rule detects an anomaly, THE ThreatAgent SHALL persist the resulting threat record to the ThreatStore with a UUID v4 identifier, type, severity, description, and detection timestamp.
+4. THE ThreatAgent SHALL perform all anomaly evaluation on-device only — no raw telemetry SHALL be transmitted to any external service.
+5. WHEN the RASP pre-operation check fails, THE ThreatAgent SHALL skip anomaly scoring, record the RASP violation as a threat, and return a score of 0.
+6. THE ThreatAgent SHALL gracefully degrade when `expo-task-manager` is not installed, logging a warning without crashing.
+
+---
+
+### Requirement 31: Certificate Pinning and Enhanced RASP
+
+**User Story:** As a security-conscious user, I want all external API connections to be certificate-pinned and all vault operations to be blocked on compromised devices, so that MITM attacks and runtime tampering cannot extract my data.
+
+#### Acceptance Criteria
+
+1. THE certificatePinning module SHALL reject any request to a non-HTTPS URL before establishing a network connection.
+2. THE certificatePinning module SHALL reject any request to a host not present in the certificate pin registry before establishing a network connection.
+3. WHEN `RASPGuard.gateVaultOperation()` is called and `preOperationCheck()` returns a failure, THE RASPGuard SHALL throw an error and prevent the vault operation from executing.
+4. WHEN `RASPGuard.gateCryptoOperation()` is called and `preOperationCheck()` returns a failure, THE RASPGuard SHALL throw an error and prevent the cryptographic operation from executing.
+5. THE Phase 2 RASPGuard SHALL detect JavaScript runtime tampering by verifying `Array.prototype.push` reference integrity and `JSON.parse`/`JSON.stringify` round-trip correctness.
+6. THE Phase 2 ThreatIntelAPI SHALL use `pinnedFetch` for all outgoing requests, enforcing certificate pinning on every VirusTotal API call.
+7. THE Phase 2 DoHResolver SHALL use `pinnedFetch` for all DoH provider queries, enforcing certificate pinning on Cloudflare, Google, and Quad9 endpoints.
+
+---
+
+### Requirement 32: Reactive Stores with Offline Cache
+
+**User Story:** As a user, I want the threat and network security state to be available instantly — even offline — so that I can always see my last known security status without waiting for a network scan.
+
+#### Acceptance Criteria
+
+1. THE NetworkStore SHALL persist the last network scan result, MITM detection result, and scan timestamp to an encrypted SQLite cache such that hydrating the store after an app restart restores those values.
+2. THE ThreatStore SHALL persist all threat records to the encrypted SQLite database and hydrate in-memory state from the database on startup.
+3. WHEN a subscriber is registered with ThreatStore or NetworkStore, THE store SHALL invoke the subscriber synchronously with the current state snapshot on every state mutation.
+4. THE ThreatStore SHALL compute and expose the current aggregate ThreatLevel from all active (unresolved) threats in in-memory state.
+5. THE NetworkStore SHALL expose an `isOffline` flag that is set to `true` when the device has no network connection, allowing the UI to display cached data with an offline indicator.
+
+---
+
+### Requirement 33: Advanced Network Inspection
+
+**User Story:** As a user, I want the network inspector to detect rogue access points and SSL anomalies in addition to basic MITM indicators, so that I am protected against sophisticated Wi-Fi attacks.
+
+#### Acceptance Criteria
+
+1. THE NetworkInspector SHALL assess the current Wi-Fi network for encryption type, signal strength anomalies, and BSSID/SSID characteristics that indicate a rogue access point.
+2. THE NetworkInspector SHALL detect ARP spoofing by probing the default gateway for unexpected HTTP redirects to non-gateway hosts.
+3. THE NetworkInspector SHALL detect SSL anomalies by probing multiple known-good HTTPS endpoints and flagging certificate errors or TLS handshake failures.
+4. WHEN a rogue AP is detected with two or more indicators, THE NetworkInspector SHALL classify the risk level as high.
+5. WHEN both ARP spoofing and SSL anomalies are detected simultaneously, THE NetworkInspector SHALL classify the MITM risk level as high.
+6. THE NetworkInspector SHALL be RASP-gated — all inspection operations SHALL be blocked and an error thrown when `preOperationCheck()` returns a failure.
+
+---
+
+### Requirement 34: Settings Screen
+
+**User Story:** As a user, I want a dedicated settings screen where I can securely store my API keys, so that I can enable breach monitoring and threat intelligence without ever exposing keys in source code.
+
+#### Acceptance Criteria
+
+1. THE Settings_Screen SHALL provide input fields for the HIBP API key and the VirusTotal (Threat Intel) API key.
+2. WHEN an API key is saved, THE Settings_Screen SHALL store it exclusively via `SecurePrefs` (expo-secure-store) and SHALL NOT display the key value after saving.
+3. THE Settings_Screen SHALL display a visual indicator (e.g. "✓ SET" badge) when a key is already stored, without revealing the key value.
+4. THE Settings_Screen SHALL provide a remove action for each stored key that deletes it from secure storage.
+5. THE Settings_Screen SHALL be accessible via a gear icon (⚙️) in the bottom tab bar.

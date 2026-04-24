@@ -357,11 +357,128 @@ Incremental implementation of the Aegis React Native (Expo SDK + TypeScript) app
 - [x] 23. Final checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
+---
+
+## Phase 2 Tasks
+
+- [x] 24. Implement Certificate Pinning Infrastructure
+  - [x] 24.1 Create `src/api/certificatePinning.ts` implementing `pinnedFetch`
+    - Enforce HTTPS-only — reject all non-HTTPS requests unconditionally
+    - Maintain pin registry for: `www.virustotal.com`, `haveibeenpwned.com`, `cloudflare-dns.com`, `dns.google`, `dns.quad9.net`
+    - Delegate to `react-native-ssl-pinning` native module when installed; fall back to hostname-only validation with logged warning
+    - Expose `registerCertificatePin` and `isPinned` utilities for runtime pin management
+    - _Requirements: 31.1, 31.2_
+
+- [x] 25. Implement Phase 2 Enhanced RASP Guard
+  - [x] 25.1 Create `src/rasp/RASPGuard.ts` extending Phase 1 RASP with vault/crypto gating and tamper detection
+    - Implement `gateVaultOperation(operationName)` — throws when `preOperationCheck()` fails
+    - Implement `gateCryptoOperation(operationName)` — throws when `preOperationCheck()` fails
+    - Implement `detectTampering()` — checks `Array.prototype.push` reference integrity and `JSON.parse`/`JSON.stringify` round-trip
+    - Add `tamper_detected` violation type mapped to `high` threat level
+    - Consolidate `src/services/RASPGuard.ts` as a re-export shim pointing to `src/rasp/RASPGuard.ts`
+    - _Requirements: 31.3, 31.4, 31.5_
+
+  - [ ]* 25.2 Write property test for vault operation gating
+    - **Property 29: Vault Operation Gating** — for any call to `gateVaultOperation()` while `preOperationCheck()` returns a failure, the method SHALL throw and the vault operation SHALL NOT proceed
+    - **Validates: Requirements 31.3**
+
+- [x] 26. Implement Phase 2 API Re-export Shims
+  - [x] 26.1 Create `src/api/ThreatIntelAPI.ts` — re-exports from `src/services/api/ThreatIntelAPI.ts`
+    - Canonical implementation stays in `src/services/api/` (tested, used by Phase 1)
+    - `src/api/` shim ensures Phase 2 module imports resolve correctly
+    - _Requirements: 31.6, 20.1, 20.2, 20.3, 20.4, 20.5_
+
+  - [x] 26.2 Create `src/api/DoHResolver.ts` — re-exports from `src/services/api/DoHResolver.ts`
+    - Canonical implementation stays in `src/services/api/` (tested, used by NetworkService)
+    - `src/api/` shim ensures Phase 2 module imports resolve correctly
+    - _Requirements: 31.7, 8.5, 8.6, 8.7, 8.8, 8.9_
+
+  - [ ]* 26.3 Write property test for certificate pinning enforcement
+    - **Property 28: Certificate Pinning Enforcement** — for any request via `pinnedFetch` to a non-HTTPS URL or unpinned host, the request SHALL be rejected before any network connection is established
+    - **Validates: Requirements 31.1, 31.2**
+
+- [x] 27. Implement ThreatStore
+  - [x] 27.1 Create `src/modules/threat/ThreatStore.ts` implementing `IThreatStore`
+    - Implement lightweight reactive store (Zustand pattern) with typed subscriber notifications
+    - Write-through persistence to encrypted SQLite `threats` table via `DatabaseService`
+    - Hydrate in-memory state from database on startup via `hydrate()`
+    - Compute aggregate `ThreatLevel` from active (unresolved) threats on every mutation
+    - Gate `addThreat` and `resolveThreats` via `raspGuard.preOperationCheck()`
+    - _Requirements: 30.3, 32.2, 32.3, 32.4_
+
+  - [ ]* 27.2 Write property test for ThreatStore write-through consistency
+    - **Property 27: ThreatStore Write-Through Consistency** — for any threat added via `addThreat()`, the threat SHALL be retrievable from both in-memory state and the encrypted SQLite database with identical field values
+    - **Validates: Requirements 30.3, 32.2**
+
+- [x] 28. Implement ThreatAgent
+  - [x] 28.1 Create `src/modules/threat/ThreatAgent.ts` implementing `IThreatAgent`
+    - Register background headless task `AEGIS_THREAT_AGENT` via `expo-task-manager` (graceful degradation when not installed)
+    - Implement 5 anomaly rules: `device_compromise`, `code_signature_invalid`, `debugger_attachment`, `emulator_detected`, `excessive_network_activity`
+    - Aggregate score = `max(rule contributions)`, clamped to [0, 100]
+    - Persist detected threats to `ThreatStore`; record RASP violations as threats when pre-op check fails
+    - All telemetry collection is on-device only — no external transmission
+    - Wire into `src/app/_layout.tsx` initialization sequence
+    - _Requirements: 30.1, 30.2, 30.3, 30.4, 30.5, 30.6_
+
+  - [ ]* 28.2 Write property test for anomaly score bounds
+    - **Property 26: Anomaly Score Bounds** — for any invocation of `runAnomalyScoring()`, the returned score SHALL be an integer between 0 and 100 inclusive
+    - **Validates: Requirements 30.2**
+
+- [x] 29. Implement NetworkStore
+  - [x] 29.1 Create `src/modules/network/NetworkStore.ts` implementing `INetworkStore`
+    - Implement lightweight reactive store with typed subscriber notifications
+    - Persist last scan result, MITM result, and scan timestamp to `network_cache` key-value table in encrypted SQLite
+    - Hydrate from cache on startup via `hydrate()`; expose `isOffline` flag
+    - Wire into `src/app/_layout.tsx` initialization sequence
+    - _Requirements: 32.1, 32.3, 32.5_
+
+  - [ ]* 29.2 Write property test for NetworkStore offline cache consistency
+    - **Property 30: NetworkStore Offline Cache Consistency** — for any scan result persisted via `updateLastScan()`, hydrating the store SHALL restore `lastScanResult` and `lastScanAt` matching the persisted values
+    - **Validates: Requirements 32.1**
+
+- [x] 30. Implement NetworkInspector
+  - [x] 30.1 Create `src/modules/network/NetworkInspector.ts` implementing `INetworkInspector`
+    - Implement `assessWiFi()` — encryption classification, signal anomaly detection, BSSID/SSID heuristics
+    - Implement `detectARPSpoofing()` — gateway IP derivation, HTTP probe for unexpected redirects
+    - Implement `fingerprintRogueAP()` — null BSSID, short SSID, signal >-30 dBm, open 2.4 GHz checks
+    - Implement `detectSSLAnomalies()` — parallel HTTPS probes to `1.1.1.1` and `8.8.8.8` for certificate errors
+    - Implement `inspect()` — runs all checks in parallel, builds `NetworkInspectionReport`, persists to `NetworkStore`
+    - Gate `inspect()` via `raspGuard.preOperationCheck()`
+    - Wire into `src/app/(tabs)/network.tsx` "Scan Now" button
+    - _Requirements: 33.1, 33.2, 33.3, 33.4, 33.5, 33.6_
+
+  - [ ]* 30.2 Write property test for rogue AP risk classification
+    - **Property 31: Rogue AP Risk Classification** — for any AP with two or more rogue AP indicators, `fingerprintRogueAP()` SHALL return `riskLevel: 'high'`
+    - **Validates: Requirements 33.4**
+
+- [x] 31. Implement Settings Screen
+  - [x] 31.1 Create `src/app/(tabs)/settings.tsx` — Settings screen
+    - Provide secure input fields for HIBP API key and VirusTotal API key
+    - Store keys via `SecurePrefs` (expo-secure-store) — never display after saving
+    - Show "✓ SET" badge when a key is already stored; provide remove action
+    - Register in `src/app/(tabs)/_layout.tsx` with ⚙️ gear icon tab
+    - _Requirements: 34.1, 34.2, 34.3, 34.4, 34.5_
+
+- [x] 32. Cleanup — Remove duplicates and consolidate
+  - Delete `src/platform/DatabaseService.web.ts` (duplicate of `src/database/DatabaseService.web.ts`)
+  - Make `src/services/RASPGuard.ts` a re-export shim pointing to `src/rasp/RASPGuard.ts`
+  - Make `src/api/ThreatIntelAPI.ts` and `src/api/DoHResolver.ts` re-export shims
+  - Update `src/app/_layout.tsx` to import `raspGuard` from `src/rasp/RASPGuard` directly
+  - _Requirements: 31.3_
+
+- [x] 33. Phase 2 checkpoint — Ensure all tests pass
+  - Run full test suite; confirm 148+ tests pass with no regressions
+  - Verify all Phase 2 files have zero TypeScript diagnostics
+  - Commit and push to `Releases` branch; merge to `main` for release
+  - _Requirements: 30–34_
+
 ## Notes
 
 - Tasks marked with `*` are optional and can be skipped for faster MVP
 - Each task references specific requirements for traceability
 - Checkpoints ensure incremental validation at key milestones
-- Property tests validate universal correctness properties (25 properties total from design)
+- Property tests validate universal correctness properties (31 properties total across Phase 1 + Phase 2)
 - Unit tests validate specific examples and edge cases
 - The design uses TypeScript throughout — all implementation uses TypeScript with strict mode
+- Phase 2 modules live in `src/modules/`, `src/api/`, and `src/rasp/` — Phase 1 services in `src/services/` are unchanged
+- `src/services/RASPGuard.ts` is now a re-export shim — the canonical implementation is `src/rasp/RASPGuard.ts`
