@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { SecurityBadge } from '../../components/SecurityBadge';
 import { networkService } from '../../services/NetworkService';
+import { networkInspector } from '../../modules/network/NetworkInspector';
 import { sessionLockService } from '../../services/SessionLockService';
 import {
   NetworkStatus,
@@ -143,18 +144,24 @@ export default function NetworkScreen() {
   const runFullScan = useCallback(async () => {
     setState((prev) => ({ ...prev, isScanning: true, error: null }));
     try {
-      const [scanResult, mitmResult, networkStatus] = await Promise.all([
-        networkService.scanNetwork(),
-        networkService.detectMITM(),
-        networkService.getNetworkStatus(),
-      ]);
+      // Use Phase 2 NetworkInspector for deep scan (ARP, rogue AP, SSL anomaly)
+      const report = await networkInspector.inspect();
 
       setState((prev) => ({
         ...prev,
-        scanResult,
-        mitmResult,
-        networkStatus,
-        lastScanTime: Date.now(),
+        scanResult: report.scanResult,
+        mitmResult: report.mitm,
+        networkStatus: report.wifiAssessment
+          ? {
+              connected: true,
+              type: 'wifi',
+              ssid: report.wifiAssessment.ssid,
+              isSecure: report.wifiAssessment.isSecure,
+              encryption: report.wifiAssessment.encryption,
+              signalStrength: report.wifiAssessment.signalStrength,
+            }
+          : prev.networkStatus,
+        lastScanTime: report.timestamp,
         isScanning: false,
       }));
     } catch {

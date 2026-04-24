@@ -103,6 +103,16 @@ export default function TabsLayout() {
           tabBarAccessibilityLabel: 'App Permission Audit tab',
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color }) => (
+            <TabIcon emoji="⚙️" color={color} />
+          ),
+          tabBarAccessibilityLabel: 'Settings tab',
+        }}
+      />
     </Tabs>
   );
 }
