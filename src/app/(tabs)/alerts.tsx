@@ -185,12 +185,22 @@ export default function AlertsScreen() {
     try {
       await breachService.addMonitoredEmail(email);
       // Trigger a breach check for the new email
-      await breachService.checkEmail(email);
+      try {
+        await breachService.checkEmail(email);
+      } catch (checkErr) {
+        // Show API key error prominently — user needs to configure it
+        if (checkErr instanceof Error && checkErr.message.includes('API key')) {
+          Alert.alert(
+            'API Key Required',
+            'Add your HaveIBeenPwned API key in Settings (⚙️) to check for breaches.\n\nThe email has been added to monitoring.',
+          );
+        }
+      }
       setEmailInput('');
       setShowAddEmailModal(false);
       await loadData();
-    } catch {
-      Alert.alert('Error', 'Failed to add email. Please try again.');
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to add email. Please try again.');
     } finally {
       setIsAddingEmail(false);
     }

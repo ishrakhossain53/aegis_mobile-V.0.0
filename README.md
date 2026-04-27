@@ -30,6 +30,7 @@ A privacy-first, on-device mobile security app for iOS and Android built with **
 | Crypto | `@noble/hashes` (PBKDF2-SHA256) + `@noble/ciphers` (AES-256-GCM) + `expo-crypto` |
 | Storage | `expo-sqlite` (encrypted local DB) + `expo-secure-store` (keychain/keystore) |
 | Auth | `expo-local-authentication` (biometrics + PIN) |
+| Network | `@react-native-community/netinfo` (Wi-Fi / cellular status) |
 | Testing | Jest + jest-expo · **148 tests** |
 
 ---
@@ -64,11 +65,13 @@ npm install --legacy-peer-deps
 ```
 
 ### 3. Start the development server
-
+### after installing @react-native-community/netinfo,
+ you need to run with --clear once to bust the Metro cache:
+  npx expo start --clear
 ```bash
-npm start          # interactive Metro menu
+npm start          # interactive Metro menu (choose platform after)
 npm run web        # open in browser at http://localhost:8081
-npm run android    # open on Android emulator
+npm run android    # open on Android emulator / device
 npm run ios        # open on iOS simulator (macOS only)
 ```
 
@@ -77,7 +80,28 @@ npm run ios        # open on iOS simulator (macOS only)
 - **iOS simulator:** press `i` (macOS only)
 - **Web browser:** press `w` or visit `http://localhost:8081`
 
-### 4. First launch
+### 4. Stop the development server
+
+Press **`Ctrl + C`** in the terminal where Metro is running to stop the server.
+
+If the process is still running in the background:
+
+```bash
+# Find and kill the Metro bundler process
+lsof -ti :8081 | xargs kill -9
+
+# Or kill all node processes (use with caution)
+pkill -f "expo start"
+```
+
+To clear the Metro cache and restart fresh:
+
+```bash
+npm start -- --clear          # clear cache then start
+npx expo start --clear        # same via expo CLI
+```
+
+### 5. First launch
 
 On first launch you'll be prompted to **create a PIN**. This PIN derives the master encryption key for your vault. Biometric authentication (Face ID / fingerprint) is offered on subsequent launches.
 
@@ -133,6 +157,7 @@ aegis-mobile-app/
 │   │   ├── VaultService.ts               # Encrypted credential CRUD + TOTP (RFC 6238)
 │   │   ├── BreachService.ts              # HIBP breach monitoring
 │   │   ├── NetworkService.ts             # Wi-Fi security, MITM detection, DoH routing
+│   │   ├── NetworkService.web.ts         # Web platform shim (navigator.onLine + Network Info API)
 │   │   ├── ThreatMonitorService.ts       # 60s polling threat monitor
 │   │   ├── SecurityScoreService.ts       # Weighted 0–100 aggregate score
 │   │   ├── PermissionAuditorService.ts   # App risk scoring (0–100)
@@ -271,7 +296,56 @@ npx expo run:ios --configuration Release   # macOS only
 
 ---
 
-## Known Limitations (Expo Go)
+## Troubleshooting
+
+### Network screen shows "Disconnected / Unknown / NONE"
+
+This means `@react-native-community/netinfo` is not installed or the Metro cache is stale.
+
+```bash
+# Install the missing package
+npx expo install @react-native-community/netinfo
+
+# Then restart with a clean cache
+npm start -- --clear
+```
+
+On **web**, the app uses `NetworkService.web.ts` which reads `navigator.onLine` and the browser's Network Information API — no native module needed.
+
+### Metro bundler port already in use
+
+```bash
+# Kill whatever is on port 8081
+lsof -ti :8081 | xargs kill -9
+npm start
+```
+
+### Dependency conflicts on install
+
+```bash
+npm install --legacy-peer-deps
+```
+
+### TypeScript errors after pulling changes
+
+```bash
+node_modules/.bin/tsc --noEmit --project tsconfig.json
+```
+
+### Tests failing
+
+```bash
+# Run a single suite to isolate the failure
+npx jest src/services/CryptoService.test.ts --verbose
+
+# Clear Jest cache
+npx jest --clearCache
+npm test
+```
+
+---
+
+
 
 | Feature | Expo Go (dev) | Production (EAS Build) |
 |---|---|---|

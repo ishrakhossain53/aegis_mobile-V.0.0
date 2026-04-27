@@ -45,17 +45,10 @@ const LOCKOUT_DURATION_MEDIUM_MS = 300_000;
 
 /**
  * SecurePrefs key used to persist the permanent lockout flag.
- * Stored as 'true' when the account is permanently locked.
- */
-const PERMANENT_LOCKOUT_KEY = 'biometric_enabled'; // reuse existing key type — see note below
-
-/**
- * NOTE: The SecurePrefKey union does not include a dedicated
- * 'permanent_lockout' key. We persist the permanent lockout flag using
- * a dedicated approach: we store it as a special sentinel value in
- * 'pin_hash'. When pin_hash equals PERMANENT_LOCKOUT_SENTINEL the account
- * is permanently locked. This avoids adding a new key to the union type
- * while still persisting the lockout across app restarts.
+ * We persist the permanent lockout flag using a sentinel value in 'pin_hash'.
+ * When pin_hash equals PERMANENT_LOCKOUT_SENTINEL the account is permanently
+ * locked. This avoids adding a new key to the union type while still
+ * persisting the lockout across app restarts.
  */
 const PERMANENT_LOCKOUT_SENTINEL = '__AEGIS_PERMANENT_LOCKOUT__';
 

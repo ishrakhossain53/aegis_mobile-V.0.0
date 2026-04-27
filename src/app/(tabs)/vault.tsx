@@ -176,10 +176,12 @@ export default function VaultScreen() {
   }, []);
 
   useEffect(() => {
-    secureClipboardService.onClear(() => {
+    const onClearHandler = () => {
       setToast({ visible: false, message: '', countdown: 0 });
-    });
+    };
+    secureClipboardService.onClear(onClearHandler);
     return () => {
+      secureClipboardService.offClear(onClearHandler);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
@@ -222,7 +224,10 @@ export default function VaultScreen() {
     );
   }, [handleInteraction]);
 
-  const handleCopy = useCallback((_credential: Credential) => {
+  const handleCopy = useCallback((credential: Credential) => {
+    // CredentialCard handles the actual copy internally via VaultService +
+    // SecureClipboardService. This callback is just a notification to show
+    // the toast UI.
     handleInteraction();
     showClipboardToast();
   }, [handleInteraction, showClipboardToast]);

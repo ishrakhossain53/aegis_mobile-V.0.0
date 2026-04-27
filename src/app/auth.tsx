@@ -58,24 +58,6 @@ export default function AuthScreen() {
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
-  // ── init: check if PIN exists ─────────────────────────────────────────────
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const stored = await securePrefs.get('pin_hash');
-        if (!stored) {
-          setScreen('setup');
-        } else {
-          setScreen('biometric');
-          tryBiometric();
-        }
-      } catch {
-        setScreen('setup');
-      }
-    })();
-  }, []);
-
   // ── biometric ─────────────────────────────────────────────────────────────
 
   const tryBiometric = useCallback(async () => {
@@ -98,6 +80,24 @@ export default function AuthScreen() {
       setBusy(false);
     }
   }, [goToDashboard]);
+
+  // ── init: check if PIN exists ─────────────────────────────────────────────
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await securePrefs.get('pin_hash');
+        if (!stored) {
+          setScreen('setup');
+        } else {
+          setScreen('biometric');
+          await tryBiometric();
+        }
+      } catch {
+        setScreen('setup');
+      }
+    })();
+  }, [tryBiometric]);
 
   // ── PIN setup ─────────────────────────────────────────────────────────────
 

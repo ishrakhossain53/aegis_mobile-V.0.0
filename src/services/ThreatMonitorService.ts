@@ -120,9 +120,7 @@ function severityToThreatLevel(severity: Threat['severity']): ThreatLevel {
     case 'high':
       return 'warning';
     case 'medium':
-      return 'advisory';
     case 'low':
-    default:
       return 'advisory';
   }
 }
