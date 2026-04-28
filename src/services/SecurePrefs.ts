@@ -47,6 +47,8 @@ export type SecurePrefKey =
   | 'doh_enabled'
   /** Breach check interval in hours (stored as string) */
   | 'breach_check_interval'
+  /** Theme preference: 'dark' | 'light' */
+  | 'theme_mode'
   /** Boolean flag stored as string 'true'/'false' */
   | 'threat_monitoring_enabled';
 

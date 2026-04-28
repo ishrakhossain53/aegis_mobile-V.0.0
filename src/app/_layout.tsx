@@ -38,13 +38,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Stack, router } from 'expo-router';
+import { ThemeProvider } from '../theme/ThemeContext';
 import { raspGuard } from '../rasp/RASPGuard';
 import { sessionLockService } from '../services/SessionLockService';
 import { threatMonitorService } from '../services/ThreatMonitorService';
 import { threatAgent } from '../modules/threat/ThreatAgent';
 import { threatStore } from '../modules/threat/ThreatStore';
 import { networkStore } from '../modules/network/NetworkStore';
-import { colors } from '../theme/colors';
+import { darkTheme } from '../theme/colors';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -160,7 +161,7 @@ export default function RootLayout() {
         <Text style={styles.splashTagline}>Personal Cybersecurity Companion</Text>
         <ActivityIndicator
           size="large"
-          color={colors.primary}
+          color={darkTheme.primary}
           style={styles.splashLoader}
           accessibilityLabel="Loading…"
         />
@@ -208,24 +209,24 @@ export default function RootLayout() {
   // -------------------------------------------------------------------------
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen
-        name="auth"
-        options={{
-          headerShown: false,
-          // Prevent back-navigation to protected screens from auth
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen
-        name="(tabs)"
-        options={{
-          headerShown: false,
-          // Prevent swiping back to auth from protected tabs
-          gestureEnabled: false,
-        }}
-      />
-    </Stack>
+    <ThemeProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen
+          name="auth"
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+          }}
+        />
+        <Stack.Screen
+          name="(tabs)"
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+          }}
+        />
+      </Stack>
+    </ThemeProvider>
   );
 }
 
@@ -237,13 +238,13 @@ const styles = StyleSheet.create({
   // Splash / loading screen
   splashContainer: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: darkTheme.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
   splashAppName: {
-    color: colors.primary,
+    color: darkTheme.primary,
     fontSize: 40,
     fontWeight: '900',
     letterSpacing: 10,
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   splashTagline: {
-    color: colors.textMuted,
+    color: darkTheme.textMuted,
     fontSize: 13,
     letterSpacing: 0.5,
     marginBottom: 48,
@@ -260,7 +261,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   splashStatus: {
-    color: colors.textMuted,
+    color: darkTheme.textMuted,
     fontSize: 13,
     letterSpacing: 0.3,
   },
@@ -268,7 +269,7 @@ const styles = StyleSheet.create({
   // Error screen
   errorContainer: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: darkTheme.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
@@ -278,21 +279,21 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   errorTitle: {
-    color: colors.danger,
+    color: darkTheme.danger,
     fontSize: 22,
     fontWeight: '700',
     marginBottom: 12,
     textAlign: 'center',
   },
   errorMessage: {
-    color: colors.textSecondary,
+    color: darkTheme.textSecondary,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 16,
   },
   errorHint: {
-    color: colors.textMuted,
+    color: darkTheme.textMuted,
     fontSize: 12,
     textAlign: 'center',
     lineHeight: 18,

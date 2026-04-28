@@ -134,7 +134,7 @@ function classifyCategoryStatus(score: number): CategoryScore['status'] {
 // SecurityScoreService implementation
 // ---------------------------------------------------------------------------
 
-class SecurityScoreServiceImpl implements ISecurityScoreService {
+export class SecurityScoreServiceImpl implements ISecurityScoreService {
   /** Cached breakdown from the last calculation — avoids double network calls */
   private lastBreakdown: ScoreBreakdown | null = null;
   // -------------------------------------------------------------------------

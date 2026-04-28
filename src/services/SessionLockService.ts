@@ -93,7 +93,7 @@ export interface ISessionLockService {
 // Implementation
 // ---------------------------------------------------------------------------
 
-class SessionLockServiceImpl implements ISessionLockService {
+export class SessionLockServiceImpl implements ISessionLockService {
   // -------------------------------------------------------------------------
   // In-memory state
   // -------------------------------------------------------------------------

@@ -23,6 +23,7 @@ import { AuthResult, BiometricCapability, AuthError } from '../types/index';
 import { cryptoService } from './CryptoService';
 import { securePrefs } from './SecurePrefs';
 import { databaseService } from '../database/DatabaseService';
+import { vaultService } from './VaultService';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -511,6 +512,9 @@ class AuthServiceImpl implements IAuthenticationService {
 
       // Unlock the encrypted database with the derived master key
       await databaseService.initialize(masterKey);
+
+      // Provide the master key to VaultService so it can encrypt/decrypt credentials
+      vaultService.setMasterKey(masterKey);
     } catch (err) {
       // Log the error but don't block authentication — the app can still
       // function with limited persistence if crypto/DB init fails.

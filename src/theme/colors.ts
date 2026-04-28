@@ -1,172 +1,146 @@
 /**
  * Semantic color token system for Aegis Personal Cybersecurity Companion.
  *
- * All UI components MUST reference colors from this module rather than
- * using raw hex literals, ensuring consistent, accessible color usage
- * that communicates security status clearly.
+ * Supports dark and light themes. All UI components consume colors via
+ * the useTheme() hook from ThemeContext rather than importing this directly.
  *
  * Requirements: 24.1, 24.2, 24.3, 24.4
  */
 
 // ---------------------------------------------------------------------------
-// Semantic status tokens
+// Status / semantic tokens (theme-independent)
 // ---------------------------------------------------------------------------
 
-/** Safe / secure state — score ≥ 80, no threats, secure network. */
-const safe = '#00FF88' as const;
-
-/** Warning / advisory state — score 50–79, minor issues, weak passwords. */
-const warning = '#FFB800' as const;
-
-/** Critical / danger state — score < 50, active threats, breaches detected. */
-const danger = '#FF3B30' as const;
-
-/** Neutral / inactive state — disabled UI, secondary text. */
-const neutral = '#8E8E93' as const;
-
-// ---------------------------------------------------------------------------
-// Background hierarchy tokens
-// ---------------------------------------------------------------------------
-
-/** App-level background — near-black base layer. */
-const background = '#0A0A0F' as const;
-
-/** Card / surface layer rendered on top of background. */
-const surface = '#12121A' as const;
-
-/** Elevated surface — modals, bottom sheets, popovers. */
-const surfaceElevated = '#1C1C28' as const;
-
-/** Border / divider between surface elements. */
-const border = '#2A2A3A' as const;
-
-// ---------------------------------------------------------------------------
-// Text hierarchy tokens
-// ---------------------------------------------------------------------------
-
-/** Primary body text — maximum contrast on dark backgrounds. */
-const textPrimary = '#FFFFFF' as const;
-
-/** Secondary / supporting text — reduced emphasis. */
-const textSecondary = '#A0A0B0' as const;
-
-/** Muted / placeholder text — lowest emphasis. */
-const textMuted = '#606070' as const;
-
-/**
- * Monospace text color — used for passwords, API keys, hashes, and other
- * sensitive data displayed in a fixed-width font.
- */
-const textMonospace = '#00FF88' as const;
-
-// ---------------------------------------------------------------------------
-// Interactive state colors
-// ---------------------------------------------------------------------------
-
-/** Primary interactive color — buttons, links, active tab indicators. */
-const primary = '#5B5BFF' as const;
-
-/** Primary color in pressed / active state. */
-const primaryPressed = '#4444DD' as const;
-
-/** Destructive action color — delete, revoke, wipe. */
-const destructive = '#FF3B30' as const;
-
-/** Success confirmation color — matches `safe`. */
-const success = '#00FF88' as const;
-
-// ---------------------------------------------------------------------------
-// Status color map
-// Requirement 24.4 — maps threat level / score level strings to hex values.
-// ---------------------------------------------------------------------------
-
-/**
- * Maps threat level and score level strings to their corresponding hex color.
- * Used by components that receive a dynamic status string and need the
- * matching color without a switch statement.
- *
- * @example
- * const color = statusColors['critical']; // '#FF3B30'
- */
 export const statusColors: Record<string, string> = {
-  // Threat levels (ThreatLevel type)
-  safe: safe,
-  advisory: warning,
-  warning: warning,
-  critical: danger,
+  safe: '#00C97A',
+  advisory: '#F59E0B',
+  warning: '#F59E0B',
+  critical: '#EF4444',
+  excellent: '#00C97A',
+  good: '#00C97A',
+  fair: '#F59E0B',
+  poor: '#EF4444',
+  compromised: '#EF4444',
+  neutral: '#8E8E93',
+};
 
-  // Security score levels (SecurityScore.level)
-  excellent: safe,
-  good: safe,
-  fair: warning,
-  poor: danger,
-
-  // Generic boolean-style states
-  compromised: danger,
-  neutral: neutral,
-} as const;
-
-// ---------------------------------------------------------------------------
-// Score gradient stops
-// Used by ScoreRing and other score visualisation components.
-// ---------------------------------------------------------------------------
-
-/**
- * Gradient color pairs for each score band.
- * Index 0 is the start color, index 1 is the end color.
- */
 export const scoreGradient = {
-  /** Score 80–100 — green gradient */
-  high: ['#00FF88', '#00CC66'] as [string, string],
-  /** Score 50–79 — amber gradient */
-  medium: ['#FFB800', '#FF8C00'] as [string, string],
-  /** Score 0–49 — red gradient */
-  low: ['#FF3B30', '#CC2020'] as [string, string],
-} as const;
+  high: ['#00C97A', '#00A060'] as [string, string],
+  medium: ['#F59E0B', '#D97706'] as [string, string],
+  low: ['#EF4444', '#DC2626'] as [string, string],
+};
 
 // ---------------------------------------------------------------------------
-// Main colors export
+// Theme palettes
 // ---------------------------------------------------------------------------
 
-/**
- * Central color token object for the Aegis design system.
- *
- * Import and use as:
- * ```ts
- * import { colors } from '@/theme/colors';
- * style={{ backgroundColor: colors.surface }}
- * ```
- */
-export const colors = {
+export interface ThemeColors {
   // Semantic status
-  safe,
-  warning,
-  danger,
-  neutral,
+  safe: string;
+  warning: string;
+  danger: string;
+  neutral: string;
 
   // Background hierarchy
-  background,
-  surface,
-  surfaceElevated,
-  border,
+  background: string;
+  surface: string;
+  surfaceElevated: string;
+  border: string;
 
   // Text hierarchy
-  textPrimary,
-  textSecondary,
-  textMuted,
-  textMonospace,
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  textMonospace: string;
 
-  // Status color map
+  // Interactive
+  primary: string;
+  primaryPressed: string;
+  destructive: string;
+  success: string;
+
+  // Tab bar
+  tabBar: string;
+  tabBarBorder: string;
+
+  // Status maps
+  statusColors: Record<string, string>;
+  scoreGradient: typeof scoreGradient;
+}
+
+export const darkTheme: ThemeColors = {
+  safe: '#00C97A',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  neutral: '#8E8E93',
+
+  background: '#0A0A0F',
+  surface: '#13131C',
+  surfaceElevated: '#1C1C2A',
+  border: '#2A2A3E',
+
+  textPrimary: '#F0F0FF',
+  textSecondary: '#9090A8',
+  textMuted: '#55556A',
+  textMonospace: '#00C97A',
+
+  primary: '#6366F1',
+  primaryPressed: '#4F52D4',
+  destructive: '#EF4444',
+  success: '#00C97A',
+
+  tabBar: '#0F0F18',
+  tabBarBorder: '#1E1E2E',
+
   statusColors,
-
-  // Score gradient
   scoreGradient,
+};
 
-  // Interactive states
-  primary,
-  primaryPressed,
-  destructive,
-  success,
-} as const;
+export const lightTheme: ThemeColors = {
+  safe: '#059669',
+  warning: '#D97706',
+  danger: '#DC2626',
+  neutral: '#6B7280',
 
-export type ColorKey = keyof typeof colors;
+  background: '#F5F5FA',
+  surface: '#FFFFFF',
+  surfaceElevated: '#EEEEF6',
+  border: '#E0E0EC',
+
+  textPrimary: '#0F0F1A',
+  textSecondary: '#4B4B6A',
+  textMuted: '#9090A8',
+  textMonospace: '#059669',
+
+  primary: '#6366F1',
+  primaryPressed: '#4F52D4',
+  destructive: '#DC2626',
+  success: '#059669',
+
+  tabBar: '#FFFFFF',
+  tabBarBorder: '#E0E0EC',
+
+  statusColors: {
+    ...statusColors,
+    safe: '#059669',
+    excellent: '#059669',
+    good: '#059669',
+    warning: '#D97706',
+    advisory: '#D97706',
+    fair: '#D97706',
+    critical: '#DC2626',
+    poor: '#DC2626',
+    compromised: '#DC2626',
+  },
+  scoreGradient: {
+    high: ['#059669', '#047857'],
+    medium: ['#D97706', '#B45309'],
+    low: ['#DC2626', '#B91C1C'],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Legacy default export (dark) — kept for backward compat during migration
+// ---------------------------------------------------------------------------
+export const colors = darkTheme;
+export type ColorKey = keyof ThemeColors;

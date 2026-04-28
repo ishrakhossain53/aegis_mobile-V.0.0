@@ -225,7 +225,7 @@ async function computeTOTP(totpSeed: string): Promise<TOTPCode> {
 // VaultService implementation
 // ---------------------------------------------------------------------------
 
-class VaultServiceImpl implements IVaultService {
+export class VaultServiceImpl implements IVaultService {
   // -------------------------------------------------------------------------
   // Module-level master key (set by AuthService after successful auth)
   // -------------------------------------------------------------------------
