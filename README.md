@@ -10,13 +10,14 @@ A privacy-first, on-device mobile security app for iOS and Android built with **
 
 | Module | Description |
 |---|---|
-| 🔐 **Encrypted Credential Vault** | Store passwords, passkeys, TOTP seeds, and API keys encrypted with AES-256-GCM |
+| 🔐 **Encrypted Credential Vault** | Store passwords and API keys encrypted with AES-256-GCM. Credentials are decrypted on demand — never stored in plaintext |
 | 🚨 **Real-Time Threat Monitor** | Background anomaly scoring engine with 5 rule-based on-device threat detectors |
 | 📡 **Network Safety Analyzer** | Wi-Fi assessment, ARP spoofing detection, rogue AP fingerprinting, SSL anomaly detection |
 | 🔍 **Breach Alert Engine** | Monitor emails/usernames against HaveIBeenPwned using k-anonymity |
 | 📱 **App Permission Auditor** | Enumerate installed apps, calculate risk scores, identify over-privileged apps |
 | 📊 **Security Score Dashboard** | Weighted 0–100 security posture score with actionable recommendations |
-| ⚙️ **Settings** | Securely store API keys in device keychain — never in source code |
+| 🌙 **Dark / Light Theme** | Full dark and light mode with system preference detection and persistent user choice |
+| ⚙️ **Settings** | Theme toggle + securely store API keys in device keychain — never in source code |
 
 ---
 
@@ -31,7 +32,8 @@ A privacy-first, on-device mobile security app for iOS and Android built with **
 | Storage | `expo-sqlite` (encrypted local DB) + `expo-secure-store` (keychain/keystore) |
 | Auth | `expo-local-authentication` (biometrics + PIN) |
 | Network | `@react-native-community/netinfo` (Wi-Fi / cellular status) |
-| Testing | Jest + jest-expo · **148 tests** |
+| Theme | React Context (`ThemeContext`) with dark/light palettes, persisted to secure storage |
+| Testing | Jest + jest-expo + @testing-library/react-native · **378 tests** |
 
 ---
 
@@ -65,9 +67,15 @@ npm install --legacy-peer-deps
 ```
 
 ### 3. Start the development server
-### after installing @react-native-community/netinfo,
- you need to run with --clear once to bust the Metro cache:
-  npx expo start --clear
+
+Run with `--clear` on first launch to bust the Metro cache:
+
+```bash
+npx expo start --clear
+```
+
+Subsequent launches:
+
 ```bash
 npm start          # interactive Metro menu (choose platform after)
 npm run web        # open in browser at http://localhost:8081
@@ -82,23 +90,18 @@ npm run ios        # open on iOS simulator (macOS only)
 
 ### 4. Stop the development server
 
-Press **`Ctrl + C`** in the terminal where Metro is running to stop the server.
+Press **`Ctrl + C`** in the terminal where Metro is running.
 
 If the process is still running in the background:
 
 ```bash
-# Find and kill the Metro bundler process
 lsof -ti :8081 | xargs kill -9
-
-# Or kill all node processes (use with caution)
-pkill -f "expo start"
 ```
 
 To clear the Metro cache and restart fresh:
 
 ```bash
-npm start -- --clear          # clear cache then start
-npx expo start --clear        # same via expo CLI
+npx expo start --clear
 ```
 
 ### 5. First launch
@@ -113,17 +116,29 @@ On first launch you'll be prompted to **create a PIN**. This PIN derives the mas
 npm test
 ```
 
-**148 tests** across 6 suites:
+**378 tests** across 17 suites:
 
-| Suite | What it covers |
-|---|---|
-| `CryptoService` | Encryption round-trips, k-anonymity hashing |
-| `SecureEnclave` | iOS Keychain / Android Keystore abstraction |
-| `SecureClipboardService` | Auto-purge timer, timeout configuration |
-| `BreachAPI` (PBT) | K-anonymity privacy, no PII in external requests |
-| `ThreatIntelAPI` | Caching, fail-open, API key from SecurePrefs |
-| `PermissionAuditorService` | Risk scoring, high-risk classification |
-| `CloudBackupService` | Encrypted export/import, wrong-key rejection |
+| Suite | Tests | What it covers |
+|---|---|---|
+| `CryptoService` | 22 | PBKDF2 key derivation, AES-256-GCM encrypt/decrypt, wrong-key rejection, k-anonymity |
+| `SecureEnclave` | 12 | iOS Keychain / Android Keystore abstraction |
+| `SecureClipboardService` | 34 | Auto-purge timer, configurable timeout, UI callbacks |
+| `SessionLockService` | 22 | Auto-lock at 60s, configurable 30–300s, resetTimer, lock events |
+| `VaultService` | 28 | Credential CRUD, encryption, UUID assignment, TOTP, search |
+| `SecurityScoreService` | 26 | Weighted score, level classification, recommendations, history |
+| `PermissionAuditorService` | 40 | Risk scoring, permission categorization, high-risk classification |
+| `CloudBackupService` | 22 | Encrypted export/import, wrong-key rejection, malformed payload |
+| `BreachAPI` (PBT) | 18 | K-anonymity privacy — no PII in any external request |
+| `ThreatIntelAPI` | 30 | Caching, fail-open, API key from SecurePrefs |
+| `ThemeContext` | 28 | Dark/light palettes, toggle, persistence, color values |
+| `SecurityBadge` | 11 | Label rendering, color per status, accessibility |
+| `AlertItem` | 13 | Severity badge, dismiss button, resolved state, accessibility |
+| `ModuleHealthBar` | 14 | Score rendering, color thresholds, clamping, onPress |
+| `AppRiskCard` | 13 | App info, permission counts, badge mapping, onPress |
+| `ScoreRing` | 12 | Score rendering, color thresholds, clamping, accessibility |
+| `CredentialCard` | 14 | Rendering, **security: never renders plaintext secrets**, copy, press |
+
+All tests must pass and `tsc --noEmit` must report zero errors before any push.
 
 ---
 
@@ -133,15 +148,16 @@ npm test
 aegis-mobile-app/
 ├── src/
 │   ├── app/                              # Expo Router screens
-│   │   ├── _layout.tsx                   # Root layout — RASP init, store hydration, session lock
+│   │   ├── _layout.tsx                   # Root layout — ThemeProvider, RASP init, session lock
 │   │   ├── auth.tsx                      # Authentication screen (biometric + PIN)
 │   │   └── (tabs)/                       # Protected tab screens
+│   │       ├── _layout.tsx               # Tab bar — theme-aware (dark/light tab bar colors)
 │   │       ├── index.tsx                 # Security Dashboard
-│   │       ├── vault.tsx                 # Credential Vault
-│   │       ├── network.tsx               # Network Safety (uses Phase 2 NetworkInspector)
+│   │       ├── vault.tsx                 # Credential Vault (passwords + API keys)
+│   │       ├── network.tsx               # Network Safety
 │   │       ├── alerts.tsx                # Breach & Threat Alerts
 │   │       ├── audit.tsx                 # App Permission Audit
-│   │       └── settings.tsx              # API key management (⚙️ gear tab)
+│   │       └── settings.tsx              # Theme toggle + API key management
 │   │
 │   ├── components/                       # Reusable UI components
 │   │   ├── ScoreRing.tsx                 # Animated security score ring
@@ -149,52 +165,50 @@ aegis-mobile-app/
 │   │   ├── CredentialCard.tsx            # Vault credential list item
 │   │   ├── ModuleHealthBar.tsx           # Per-module score bar
 │   │   ├── AlertItem.tsx                 # Threat / breach alert item
-│   │   └── AppRiskCard.tsx               # App permission risk card
+│   │   ├── AppRiskCard.tsx               # App permission risk card
+│   │   └── __tests__/                    # Component unit tests
 │   │
-│   ├── services/                         # Phase 1 — business logic & integrations
+│   ├── services/                         # Business logic & integrations
 │   │   ├── AuthService.ts                # Biometric + PIN auth, escalating lockout
 │   │   ├── CryptoService.ts              # PBKDF2, AES-256-GCM, k-anonymity
 │   │   ├── VaultService.ts               # Encrypted credential CRUD + TOTP (RFC 6238)
 │   │   ├── BreachService.ts              # HIBP breach monitoring
 │   │   ├── NetworkService.ts             # Wi-Fi security, MITM detection, DoH routing
-│   │   ├── NetworkService.web.ts         # Web platform shim (navigator.onLine + Network Info API)
+│   │   ├── NetworkService.web.ts         # Web platform shim
 │   │   ├── ThreatMonitorService.ts       # 60s polling threat monitor
 │   │   ├── SecurityScoreService.ts       # Weighted 0–100 aggregate score
 │   │   ├── PermissionAuditorService.ts   # App risk scoring (0–100)
 │   │   ├── SecureClipboardService.ts     # Auto-purge clipboard (10–60s)
 │   │   ├── CloudBackupService.ts         # Optional encrypted backup/restore
-│   │   ├── RASPGuard.ts                  # Re-exports src/rasp/RASPGuard (Phase 2)
 │   │   ├── SessionLockService.ts         # Auto-lock on inactivity (30–300s)
 │   │   ├── SecureEnclave.ts              # iOS Keychain / Android Keystore abstraction
-│   │   ├── SecurePrefs.ts                # Typed secure preferences
+│   │   ├── SecurePrefs.ts                # Typed secure preferences (incl. theme_mode)
 │   │   └── api/
 │   │       ├── BreachAPI.ts              # HaveIBeenPwned v3 client (k-anonymity)
-│   │       ├── ThreatIntelAPI.ts         # VirusTotal reputation client (canonical)
+│   │       ├── ThreatIntelAPI.ts         # VirusTotal reputation client
 │   │       └── DoHResolver.ts            # DNS-over-HTTPS (Cloudflare / Google / Quad9)
 │   │
-│   ├── modules/                          # Phase 2 — feature modules
+│   ├── modules/                          # Phase 2 feature modules
 │   │   ├── threat/
-│   │   │   ├── ThreatAgent.ts            # Background headless task + anomaly scoring engine
+│   │   │   ├── ThreatAgent.ts            # Background headless task + anomaly scoring
 │   │   │   └── ThreatStore.ts            # Reactive store → encrypted SQLite write-through
 │   │   └── network/
-│   │       ├── NetworkInspector.ts       # ARP spoofing, rogue AP fingerprinting, SSL anomaly
+│   │       ├── NetworkInspector.ts       # ARP spoofing, rogue AP, SSL anomaly detection
 │   │       └── NetworkStore.ts           # Reactive store with offline SQLite cache
 │   │
-│   ├── api/                              # Phase 2 — re-export shims (point to services/api/)
-│   │   ├── certificatePinning.ts         # pinnedFetch interceptor (HTTPS-only + host allowlist)
-│   │   ├── ThreatIntelAPI.ts             # Re-exports from services/api/ThreatIntelAPI
-│   │   └── DoHResolver.ts                # Re-exports from services/api/DoHResolver
-│   │
-│   ├── rasp/                             # Phase 2 — enhanced RASP guard
+│   ├── rasp/
 │   │   └── RASPGuard.ts                  # Vault/crypto op gating + JS runtime tamper detection
 │   │
 │   ├── database/
 │   │   ├── DatabaseService.ts            # expo-sqlite CRUD + transactions
 │   │   └── DatabaseService.web.ts        # In-memory stub for web platform
+│   │
 │   ├── types/
 │   │   └── index.ts                      # All shared TypeScript interfaces
+│   │
 │   └── theme/
-│       └── colors.ts                     # Semantic color tokens
+│       ├── colors.ts                     # Dark + light theme palettes (ThemeColors interface)
+│       └── ThemeContext.tsx              # ThemeProvider + useTheme() hook
 │
 ├── .kiro/specs/aegis-mobile-app/         # Spec-driven development docs
 │   ├── requirements.md
@@ -205,6 +219,19 @@ aegis-mobile-app/
 ├── tsconfig.json
 └── package.json
 ```
+
+---
+
+## Dark / Light Theme
+
+Aegis supports full dark and light mode:
+
+- **Auto-detect:** defaults to the device's system color scheme on first launch
+- **Manual toggle:** switch in **Settings → Appearance** using the 🌙 / ☀️ toggle
+- **Persistent:** preference is saved to the device keychain and restored on next launch
+- **Reactive:** all screens, the tab bar, and modals update instantly when the theme changes
+
+The theme system is built on React Context (`ThemeContext`) with two complete palettes defined in `src/theme/colors.ts`. All screens consume colors via the `useTheme()` hook — no hardcoded hex values in screen files.
 
 ---
 
@@ -249,14 +276,14 @@ npx expo run:ios --configuration Release   # macOS only
 
 ### Encryption
 - All vault data encrypted with **AES-256-GCM** before storage
-- Master key derived via **PBKDF2-SHA256** (100,000 iterations)
+- Master key derived via **PBKDF2-SHA256** (100,000 iterations in production, 1,000 in dev)
 - Unique IV generated per encryption operation — never reused
 - Authentication tag verified on every decryption
 
 ### Key Storage
 - Master key salt stored in **iOS Keychain / Android Keystore** via `expo-secure-store`
 - PIN stored as **SHA-256 hash** only — never plaintext
-- All API keys stored exclusively in the secure enclave via the Settings screen
+- All API keys and theme preference stored exclusively in the secure enclave
 
 ### Privacy
 - Breach checks use **k-anonymity** — only the first 5 chars of a SHA-1 hash are sent to HIBP
@@ -264,58 +291,42 @@ npx expo run:ios --configuration Release   # macOS only
 - DNS queries routed through **DNS-over-HTTPS** when enabled
 - All external API payloads are anonymized — no user data transmitted
 
-### RASP — Phase 1 (`src/services/RASPGuard.ts` → `src/rasp/RASPGuard.ts`)
+### Session Security
+- Auto-lock after **60 seconds of inactivity** by default (configurable 30–300s)
+- Every user interaction resets the inactivity timer
+- On lock, the master key is cleared from memory and re-authentication is required
+
+### RASP Protection
 - Debugger attachment detection (production only)
 - Emulator / simulator detection
 - Root / jailbreak detection via `expo-device`
 - Bundle ID integrity verification
-
-### RASP — Phase 2 enhancements (`src/rasp/RASPGuard.ts`)
-- **`gateVaultOperation()`** — throws on any integrity failure before vault access
-- **`gateCryptoOperation()`** — throws on any integrity failure before crypto ops
-- **`detectTampering()`** — `Array.prototype.push` reference check + `JSON.parse`/`JSON.stringify` round-trip integrity
+- `gateVaultOperation()` / `gateCryptoOperation()` — throw on any integrity failure
+- JS runtime tamper detection (`Array.prototype.push` reference check)
 
 ### Certificate Pinning (`src/api/certificatePinning.ts`)
-- All external requests go through `pinnedFetch` — a drop-in `fetch` replacement
-- HTTPS-only enforcement — HTTP requests rejected unconditionally
+- All external requests go through `pinnedFetch` — HTTPS-only enforcement
 - Host allowlist — requests to unpinned hosts rejected before any connection
-- Pinned: `www.virustotal.com`, `haveibeenpwned.com`, `cloudflare-dns.com`, `dns.google`, `dns.quad9.net`
-- Full certificate fingerprint validation via `react-native-ssl-pinning` when installed
-
-### Network Inspection — Phase 2 (`src/modules/network/NetworkInspector.ts`)
-- **ARP spoofing** — gateway IP consistency + HTTP redirect anomaly checks
-- **Rogue AP fingerprinting** — BSSID / SSID / signal / frequency heuristics
-- **SSL anomaly detection** — parallel HTTPS probes to known-good endpoints
-- Results persisted to encrypted offline cache via `NetworkStore`
-
-### Background Threat Agent — Phase 2 (`src/modules/threat/ThreatAgent.ts`)
-- Runs as a headless background task via `expo-task-manager`
-- Five anomaly rules: device compromise, code signature, debugger, emulator, network activity
-- Aggregate score = `max(rule contributions)` — no double-counting
-- All telemetry is on-device only — nothing transmitted externally
+- Pinned hosts: `www.virustotal.com`, `haveibeenpwned.com`, `cloudflare-dns.com`, `dns.google`, `dns.quad9.net`
 
 ---
 
 ## Troubleshooting
 
+### Vault shows empty after saving credentials
+
+This was a known bug (fixed in the current version). The root cause was `AuthService` not calling `vaultService.setMasterKey()` after successful authentication. If you're on an older version, pull the latest from `Releases`.
+
 ### Network screen shows "Disconnected / Unknown / NONE"
 
-This means `@react-native-community/netinfo` is not installed or the Metro cache is stale.
-
 ```bash
-# Install the missing package
 npx expo install @react-native-community/netinfo
-
-# Then restart with a clean cache
 npm start -- --clear
 ```
-
-On **web**, the app uses `NetworkService.web.ts` which reads `navigator.onLine` and the browser's Network Information API — no native module needed.
 
 ### Metro bundler port already in use
 
 ```bash
-# Kill whatever is on port 8081
 lsof -ti :8081 | xargs kill -9
 npm start
 ```
@@ -329,7 +340,7 @@ npm install --legacy-peer-deps
 ### TypeScript errors after pulling changes
 
 ```bash
-node_modules/.bin/tsc --noEmit --project tsconfig.json
+npx tsc --noEmit
 ```
 
 ### Tests failing
@@ -339,13 +350,12 @@ node_modules/.bin/tsc --noEmit --project tsconfig.json
 npx jest src/services/CryptoService.test.ts --verbose
 
 # Clear Jest cache
-npx jest --clearCache
-npm test
+npx jest --clearCache && npm test
 ```
 
 ---
 
-
+## Expo Go vs Production Build
 
 | Feature | Expo Go (dev) | Production (EAS Build) |
 |---|---|---|
@@ -354,6 +364,7 @@ npm test
 | SQLite encryption | Unencrypted (SQLCipher needs native build) | AES-256 encrypted |
 | Certificate pinning | Hostname-only (no native SSL module) | Full fingerprint via `react-native-ssl-pinning` |
 | Background tasks | Not available | Registered via `expo-task-manager` |
+| PBKDF2 iterations | 1,000 (dev speed) | 100,000 (production security) |
 
 ---
 
@@ -381,11 +392,9 @@ git push origin Releases
 
 1. Fork the repository
 2. Branch off `Releases`: `git checkout -b feature/my-feature Releases`
-3. Run tests: `npm test`
-4. Check types: `node_modules/.bin/tsc --noEmit --project tsconfig.json`
+3. Run tests: `npm test` — all 378 must pass
+4. Check types: `npx tsc --noEmit` — must report zero errors
 5. Commit and push, then open a PR targeting `Releases`
-
-All 148 tests must pass and `tsc --noEmit` must report zero errors.
 
 ---
 
