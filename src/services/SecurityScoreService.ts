@@ -30,6 +30,7 @@ import { databaseService } from '../database/DatabaseService';
 import { permissionAuditorService } from './PermissionAuditorService';
 import { breachService } from './BreachService';
 import { networkService } from './NetworkService';
+import { vaultService } from './VaultService';
 
 // ---------------------------------------------------------------------------
 // ScoreHistoryEntry type
@@ -133,30 +134,50 @@ function classifyCategoryStatus(score: number): CategoryScore['status'] {
 // SecurityScoreService implementation
 // ---------------------------------------------------------------------------
 
-class SecurityScoreServiceImpl implements ISecurityScoreService {
+export class SecurityScoreServiceImpl implements ISecurityScoreService {
+  /** Cached breakdown from the last calculation — avoids double network calls */
+  private lastBreakdown: ScoreBreakdown | null = null;
   // -------------------------------------------------------------------------
   // Category score calculators
   // -------------------------------------------------------------------------
 
   /**
-   * Calculate vault health score.
-   *
-   * Stub at 80 — vault health requires VaultService integration which is
-   * complex and out of scope for this task.
+   * Calculate vault health score based on actual credential count.
+   * - 0 credentials → 40 (vault unused)
+   * - 1–4 credentials → 65 (minimal usage)
+   * - 5–19 credentials → 80 (good usage)
+   * - 20+ credentials → 95 (excellent usage)
    */
   private async calculateVaultHealthScore(): Promise<{
     score: number;
     issues: string[];
   }> {
-    // Stub: VaultService integration is deferred
-    const score = 80;
-    const issues: string[] = [];
+    try {
+      const credentials = await vaultService.getAllCredentials();
+      const count = credentials.length;
+      const issues: string[] = [];
 
-    if (score < 100) {
-      issues.push('Vault health check is using estimated data. Connect VaultService for accurate results.');
+      let score: number;
+      if (count === 0) {
+        score = 40;
+        issues.push('Your vault is empty. Add credentials to improve your vault health score.');
+      } else if (count < 5) {
+        score = 65;
+        issues.push(`Only ${count} credential${count > 1 ? 's' : ''} in vault. Add more to improve coverage.`);
+      } else if (count < 20) {
+        score = 80;
+      } else {
+        score = 95;
+      }
+
+      return { score, issues };
+    } catch {
+      // DB not initialized yet — return neutral score
+      return {
+        score: 50,
+        issues: ['Vault health check unavailable. Authenticate to enable.'],
+      };
     }
-
-    return { score, issues };
   }
 
   /**
@@ -338,6 +359,9 @@ class SecurityScoreServiceImpl implements ISecurityScoreService {
       },
     };
 
+    // Cache breakdown so getScoreBreakdown() can return it without re-running
+    this.lastBreakdown = breakdown;
+
     // Persist to database (Req 11.5)
     await this.persistScore(timestamp, score, breakdown);
 
@@ -350,11 +374,20 @@ class SecurityScoreServiceImpl implements ISecurityScoreService {
 
   /**
    * Calculate and return the full per-category score breakdown.
-   * Triggers a fresh score calculation.
+   * Returns the cached breakdown from the last calculateSecurityScore() call
+   * if available, otherwise triggers a fresh calculation.
    *
    * Requirements: 11.1
    */
   async getScoreBreakdown(): Promise<ScoreBreakdown> {
+    // Return cached result if available (avoids double network/DB calls
+    // when dashboard calls calculateSecurityScore + getScoreBreakdown)
+    if (this.lastBreakdown !== null) {
+      const cached = this.lastBreakdown;
+      this.lastBreakdown = null; // consume cache — next call recalculates
+      return cached;
+    }
+
     const [vault, network, appRisk, osHygiene, breach] = await Promise.all([
       this.calculateVaultHealthScore(),
       this.calculateNetworkSafetyScore(),

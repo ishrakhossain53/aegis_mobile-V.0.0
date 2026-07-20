@@ -225,7 +225,7 @@ async function computeTOTP(totpSeed: string): Promise<TOTPCode> {
 // VaultService implementation
 // ---------------------------------------------------------------------------
 
-class VaultServiceImpl implements IVaultService {
+export class VaultServiceImpl implements IVaultService {
   // -------------------------------------------------------------------------
   // Module-level master key (set by AuthService after successful auth)
   // -------------------------------------------------------------------------
@@ -458,7 +458,13 @@ class VaultServiceImpl implements IVaultService {
       'SELECT * FROM credentials ORDER BY updated_at DESC',
     );
 
-    return Promise.all(rows.map((row) => this.rowToCredential(row)));
+    const results = await Promise.allSettled(
+      rows.map((row) => this.rowToCredential(row)),
+    );
+
+    return results
+      .filter((r): r is PromiseFulfilledResult<Credential> => r.status === 'fulfilled')
+      .map((r) => r.value);
   }
 
   // -------------------------------------------------------------------------

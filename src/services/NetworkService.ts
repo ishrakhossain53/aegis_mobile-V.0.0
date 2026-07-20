@@ -45,9 +45,16 @@ function loadNetInfo(): NetInfoFetchFn {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const NetInfo = require('@react-native-community/netinfo');
-    return NetInfo.default?.fetch ?? NetInfo.fetch;
+    const fn: NetInfoFetchFn | undefined =
+      NetInfo.default?.fetch ?? NetInfo.fetch;
+    if (typeof fn !== 'function') {
+      throw new Error(
+        'NetInfo.fetch is not a function — unexpected module shape',
+      );
+    }
+    return fn;
   } catch {
-    // Package not installed — return a stub that reports "unknown"
+    // Package not installed or unexpected module shape — return a stub
     return async (): Promise<NetInfoState> => ({
       type: 'unknown',
       isConnected: null,
@@ -135,7 +142,7 @@ class NetworkService implements INetworkService {
   private dohEnabled = false;
   private dohProvider: DoHProvider = 'cloudflare';
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
-  /** Most recently fetched status — used by auto-refresh and getDNSStatus */
+  /** Most recently fetched status — cached for internal use */
   private lastStatus: NetworkStatus | null = null;
   /** Round-trip latency measured during the last DoH probe (ms) */
   private lastDohLatencyMs = 0;
@@ -217,7 +224,7 @@ class NetworkService implements INetworkService {
         indicators.push(
           'Possible ARP spoofing — SSL handshake failed with known endpoint',
         );
-      } else if (message.includes('AbortError') || message.includes('abort')) {
+      } else if (err instanceof DOMException && err.name === 'AbortError') {
         // Timeout — inconclusive, not flagged as MITM
       } else {
         // Generic network error — low-confidence indicator
@@ -292,7 +299,7 @@ class NetworkService implements INetworkService {
     if (status.type === 'wifi' && !status.isSecure) {
       threats.push({
         type: 'unsecured_wifi',
-        severity: status.encryption === 'WEP' ? 'high' : 'high',
+        severity: status.encryption === 'WEP' ? 'high' : 'medium',
         description:
           status.encryption === 'WEP'
             ? 'Connected to a WEP-encrypted network. WEP is cryptographically broken.'
@@ -382,6 +389,11 @@ class NetworkService implements INetworkService {
 
   /**
    * Map NetInfo connection type strings to the NetworkStatus type union.
+   * NetInfo can return types beyond wifi/cellular/ethernet (e.g. 'vpn',
+   * 'bluetooth', 'wimax', 'other', 'unknown'). These are all mapped to
+   * 'none' because the NetworkStatus type union has no 'other' variant.
+   * This means the device is treated as effectively disconnected for
+   * security-classification purposes, which is the safe default.
    */
   private mapNetInfoType(
     netInfoType: string,
@@ -394,6 +406,7 @@ class NetworkService implements INetworkService {
       case 'ethernet':
         return 'ethernet';
       default:
+        // 'vpn', 'bluetooth', 'wimax', 'other', 'unknown', etc.
         return 'none';
     }
   }

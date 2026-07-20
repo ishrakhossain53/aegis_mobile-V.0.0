@@ -332,10 +332,7 @@ export class CloudBackupServiceImpl implements ICloudBackupService {
     await Share.share(
       {
         title: 'Aegis Encrypted Backup',
-        message: Platform.OS === 'android'
-          ? result.payload          // Android: message is the shareable text
-          : result.payload,         // iOS: message shown in share sheet
-        url: undefined,             // No URL — payload is the content itself
+        message: result.payload,
       },
       {
         dialogTitle: `Save Aegis Backup (${filename})`,

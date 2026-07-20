@@ -16,9 +16,9 @@
  * Requirements: 9.1, 9.2, 9.3, 9.4, 9.8, 9.9
  */
 
-import { cryptoService } from './CryptoService';
 import { breachAPI } from './api/BreachAPI';
 import { databaseService } from '../database/DatabaseService';
+import { securePrefs } from './SecurePrefs';
 import { BreachResult, BreachInfo, MonitoredIdentity } from '../types/index';
 
 // ---------------------------------------------------------------------------
@@ -92,44 +92,21 @@ class BreachServiceImpl implements IBreachService {
   // -------------------------------------------------------------------------
 
   /**
-   * Perform a k-anonymity breach check for any identity value (email or
-   * username).
+   * Perform a breach check for an email or username via the HIBP
+   * breachedaccount endpoint.
    *
-   * Steps:
-   *  1. Hash the value with SHA-1 via CryptoService.kAnonymityHash.
-   *  2. Send only the 5-char prefix to HIBP.
-   *  3. Parse the returned suffix list and look for the full hash.
-   *  4. If found, fetch breach details for each matching breach name.
+   * Privacy: the full email/username IS sent to HIBP — this is required by
+   * the /breachedaccount/ endpoint. The HIBP API key is required and loaded
+   * from SecurePrefs. The k-anonymity /range/ endpoint is for PASSWORD
+   * checking only, not email/account breach checking.
    *
-   * The full plaintext value is NEVER transmitted to HIBP (Requirement 9.1).
+   * If no API key is configured, returns a result indicating the check
+   * could not be performed (not an error — just unconfigured).
    */
   private async performBreachCheck(value: string): Promise<BreachResult> {
-    const { prefix, fullHash } = await cryptoService.kAnonymityHash(value);
-
-    // Send only the 5-char prefix — never the full hash or plaintext
-    const suffixLines = await breachAPI.getBreachesByPrefix(prefix);
-
-    // The suffix lines are "SUFFIX:count" — check if our full hash suffix matches
-    const fullHashSuffix = fullHash.slice(5).toUpperCase();
-    const matchingLine = suffixLines.find((line) => {
-      const [suffix] = line.split(':');
-      return suffix.toUpperCase() === fullHashSuffix;
-    });
-
-    if (!matchingLine) {
-      // No match — identity is safe
-      return {
-        compromised: false,
-        breaches: [],
-        totalBreaches: 0,
-        lastChecked: Date.now(),
-      };
-    }
-
-    // The password range endpoint confirms the hash was seen in a breach.
-    // For email/username breach details, we use the breachedaccount endpoint
-    // with the k-anonymity prefix (per spec requirement 9.1 — only prefix sent).
-    const breaches = await breachAPI.getBreachesForAccount(prefix);
+    // Use the breachedaccount endpoint with the actual email/username.
+    // This requires the HIBP API key (loaded from SecurePrefs by BreachAPI).
+    const breaches = await breachAPI.getBreachesForAccount(value);
 
     return {
       compromised: breaches.length > 0,
@@ -138,14 +115,15 @@ class BreachServiceImpl implements IBreachService {
       lastChecked: Date.now(),
     };
   }
-
   // -------------------------------------------------------------------------
   // IBreachService — check methods
   // -------------------------------------------------------------------------
 
   /**
    * Check an email address for breaches.
-   * Uses k-anonymity: only the 5-char SHA-1 prefix is sent to HIBP.
+   * Uses the HIBP /breachedaccount/ endpoint which requires the full email
+   * address and an API key. The k-anonymity /range/ endpoint is for password
+   * hash checking only — not for account breach lookups.
    *
    * Falls back to cached DB data when HIBP is unreachable (Requirement 9.8).
    *
@@ -157,7 +135,8 @@ class BreachServiceImpl implements IBreachService {
 
   /**
    * Check a username for breaches.
-   * Uses k-anonymity: only the 5-char SHA-1 prefix is sent to HIBP.
+   * Uses the HIBP /breachedaccount/ endpoint which requires the full username
+   * and an API key.
    *
    * Falls back to cached DB data when HIBP is unreachable (Requirement 9.8).
    *
@@ -169,31 +148,40 @@ class BreachServiceImpl implements IBreachService {
 
   /**
    * Internal: check any identity value and update its DB record if it exists.
+   * Throws a descriptive error when no HIBP API key is configured.
    */
   private async checkIdentity(
     value: string,
     type: 'email' | 'username',
   ): Promise<BreachResult> {
+    // Check API key is configured before making any network call
+    const apiKey = await securePrefs.get('hibp_api_key');
+    if (!apiKey) {
+      throw new Error(
+        'HIBP API key not configured. Go to Settings (⚙️) to add your HaveIBeenPwned API key.',
+      );
+    }
+
     try {
       const result = await this.performBreachCheck(value);
-
-      // Persist updated status if this identity is being monitored
       await this.updateMonitoredIdentityStatus(value, type, result);
-
       return result;
     } catch (error) {
+      // Re-throw API key errors directly — don't fall back to cache
+      if (error instanceof Error && error.message.includes('API key')) {
+        throw error;
+      }
       // HIBP unreachable — return cached data if available (Requirement 9.8)
       const cached = await this.getCachedBreachResult(value);
       if (cached !== null) {
         return cached;
       }
-
       // No cache — surface offline state
       return {
         compromised: false,
         breaches: [],
         totalBreaches: 0,
-        lastChecked: 0, // 0 signals "never successfully checked"
+        lastChecked: 0,
       };
     }
   }

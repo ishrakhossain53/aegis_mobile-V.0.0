@@ -103,20 +103,20 @@ class CryptoService implements ICryptographyService {
     // Production builds use the full 100,000 iterations.
     const iterations = __DEV__ ? 1_000 : PBKDF2_ITERATIONS;
 
-    return new Promise((resolve) => {
-      // Yield to the event loop before the blocking computation
-      setTimeout(() => {
-        const keyBytes = pbkdf2(sha256, passwordBytes, salt, {
-          c: iterations,
-          dkLen: AES_KEY_BYTES,
-        });
-        resolve({
-          key: keyBytes,
-          algorithm: 'AES-GCM',
-          keySize: 256,
-        });
-      }, 0);
+    // Yield to the event loop briefly, then run synchronously and resolve.
+    // We use a Promise wrapper so the caller can properly await completion.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const keyBytes = pbkdf2(sha256, passwordBytes, salt, {
+      c: iterations,
+      dkLen: AES_KEY_BYTES,
     });
+
+    return {
+      key: keyBytes,
+      algorithm: 'AES-GCM',
+      keySize: 256,
+    };
   }
 
   /**

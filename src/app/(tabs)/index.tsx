@@ -1,14 +1,7 @@
 /**
  * index.tsx — Dashboard Screen
  *
- * Main security overview screen displaying:
- *  - ScoreRing (size 160) with overall score and level label
- *  - 5 ModuleHealthBar components (Vault Health, Network Safety, App Risk,
- *    OS Hygiene, Breach Status)
- *  - Last 3 AlertItem components in "Recent Alerts" with "View All" link
- *  - Quick action row: "Scan Network", "Check Breaches", "Add Credential"
- *  - Pull-to-refresh recalculates security score; ring animates on refresh
- *
+ * Main security overview with dark/light theme support.
  * Requirements: 11.1, 11.7, 26.1
  */
 
@@ -31,7 +24,7 @@ import { securityScoreService } from '../../services/SecurityScoreService';
 import { threatMonitorService } from '../../services/ThreatMonitorService';
 import { sessionLockService } from '../../services/SessionLockService';
 import { SecurityScore, ScoreBreakdown, Threat } from '../../types/index';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,21 +53,13 @@ function getLevelLabel(level: SecurityScore['level']): string {
   }
 }
 
-function getLevelColor(level: SecurityScore['level']): string {
-  switch (level) {
-    case 'excellent':
-    case 'good': return colors.safe;
-    case 'fair': return colors.warning;
-    case 'poor':
-    case 'critical': return colors.danger;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export default function DashboardScreen() {
+  const { colors } = useTheme();
+
   const [state, setState] = useState<DashboardState>({
     score: null,
     breakdown: null,
@@ -125,17 +110,9 @@ export default function DashboardScreen() {
     void loadDashboardData();
   }, [loadDashboardData]);
 
-  // -------------------------------------------------------------------------
-  // Session activity tracking
-  // -------------------------------------------------------------------------
-
   const handleInteraction = useCallback(() => {
     sessionLockService.resetTimer();
   }, []);
-
-  // -------------------------------------------------------------------------
-  // Alert dismiss
-  // -------------------------------------------------------------------------
 
   const handleDismissAlert = useCallback(async (id: string) => {
     await threatMonitorService.resolveThreats([id]);
@@ -166,57 +143,50 @@ export default function DashboardScreen() {
     router.push('/(tabs)/vault');
   }, [handleInteraction]);
 
-  // -------------------------------------------------------------------------
-  // Module navigation
-  // -------------------------------------------------------------------------
-
-  const navigateToVault = useCallback(() => {
-    handleInteraction();
-    router.push('/(tabs)/vault');
-  }, [handleInteraction]);
-
-  const navigateToNetwork = useCallback(() => {
-    handleInteraction();
-    router.push('/(tabs)/network');
-  }, [handleInteraction]);
-
-  const navigateToAudit = useCallback(() => {
-    handleInteraction();
-    router.push('/(tabs)/audit');
-  }, [handleInteraction]);
-
-  const navigateToAlerts = useCallback(() => {
-    handleInteraction();
-    router.push('/(tabs)/alerts');
-  }, [handleInteraction]);
+  const navigateToVault = useCallback(() => { handleInteraction(); router.push('/(tabs)/vault'); }, [handleInteraction]);
+  const navigateToNetwork = useCallback(() => { handleInteraction(); router.push('/(tabs)/network'); }, [handleInteraction]);
+  const navigateToAudit = useCallback(() => { handleInteraction(); router.push('/(tabs)/audit'); }, [handleInteraction]);
+  const navigateToAlerts = useCallback(() => { handleInteraction(); router.push('/(tabs)/alerts'); }, [handleInteraction]);
 
   // -------------------------------------------------------------------------
-  // Loading state
+  // Score color
+  // -------------------------------------------------------------------------
+
+  function getLevelColor(level: SecurityScore['level']): string {
+    switch (level) {
+      case 'excellent':
+      case 'good': return colors.safe;
+      case 'fair': return colors.warning;
+      case 'poor':
+      case 'critical': return colors.danger;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Loading
   // -------------------------------------------------------------------------
 
   if (state.isLoading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator
-            size="large"
-            color={colors.primary}
-            accessibilityLabel="Loading security data…"
-          />
-          <Text style={styles.loadingText}>Calculating security score…</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+            Calculating security score…
+          </Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  const { score, breakdown, recentAlerts } = state;
+
   // -------------------------------------------------------------------------
   // Main render
   // -------------------------------------------------------------------------
 
-  const { score, breakdown, recentAlerts } = state;
-
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -225,8 +195,6 @@ export default function DashboardScreen() {
             refreshing={state.isRefreshing}
             onRefresh={() => loadDashboardData(true)}
             tintColor={colors.primary}
-            title="Recalculating score…"
-            titleColor={colors.textMuted}
           />
         }
         onScrollBeginDrag={handleInteraction}
@@ -234,138 +202,123 @@ export default function DashboardScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle} accessibilityRole="header">
-            Security Overview
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            {score
-              ? `Updated ${new Date(score.lastUpdated).toLocaleTimeString()}`
-              : 'Pull to refresh'}
-          </Text>
+          <View>
+            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}
+              accessibilityRole="header">
+              Security Overview
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
+              {score
+                ? `Updated ${new Date(score.lastUpdated).toLocaleTimeString()}`
+                : 'Pull to refresh'}
+            </Text>
+          </View>
         </View>
 
         {/* Error banner */}
         {state.error && (
-          <View style={styles.errorBanner} accessibilityRole="alert">
-            <Text style={styles.errorText}>{state.error}</Text>
+          <View style={[styles.errorBanner, {
+            backgroundColor: `${colors.danger}18`,
+            borderColor: `${colors.danger}35`,
+          }]} accessibilityRole="alert">
+            <Text style={[styles.errorText, { color: colors.danger }]}>{state.error}</Text>
           </View>
         )}
 
-        {/* Score Ring */}
-        <View style={styles.scoreSection}>
+        {/* Score Ring Card */}
+        <View style={[styles.scoreCard, {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        }]}>
           <ScoreRing
             score={score?.overall ?? 0}
-            size={160}
-            strokeWidth={12}
-            style={styles.scoreRing}
+            size={148}
+            strokeWidth={11}
           />
           {score && (
             <View style={styles.scoreLabelContainer}>
-              <Text
-                style={[styles.scoreLevel, { color: getLevelColor(score.level) }]}
-                accessibilityLabel={`Security level: ${getLevelLabel(score.level)}`}
-              >
+              <Text style={[styles.scoreValue, { color: colors.textPrimary }]}>
+                {score.overall}
+              </Text>
+              <Text style={[styles.scoreLevel, { color: getLevelColor(score.level) }]}>
                 {getLevelLabel(score.level)}
               </Text>
-              <Text style={styles.scoreDescription}>
-                Overall Security Score
+              <Text style={[styles.scoreDescription, { color: colors.textMuted }]}>
+                Security Score
               </Text>
             </View>
           )}
         </View>
 
-        {/* Module Health Bars */}
+        {/* Module Health */}
         {breakdown && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Module Health</Text>
-            <View style={styles.moduleList}>
-              <ModuleHealthBar
-                label="Vault Health"
-                score={breakdown.vaultHealth.score}
-                onPress={navigateToVault}
-                style={styles.moduleBar}
-              />
-              <ModuleHealthBar
-                label="Network Safety"
-                score={breakdown.networkSafety.score}
-                onPress={navigateToNetwork}
-                style={styles.moduleBar}
-              />
-              <ModuleHealthBar
-                label="App Risk"
-                score={breakdown.appRisk.score}
-                onPress={navigateToAudit}
-                style={styles.moduleBar}
-              />
-              <ModuleHealthBar
-                label="OS Hygiene"
-                score={breakdown.osHygiene.score}
-                style={styles.moduleBar}
-              />
-              <ModuleHealthBar
-                label="Breach Status"
-                score={breakdown.breachStatus.score}
-                onPress={navigateToAlerts}
-                style={styles.moduleBar}
-              />
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              Module Health
+            </Text>
+            <View style={[styles.moduleCard, {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            }]}>
+              <ModuleHealthBar label="Vault Health" score={breakdown.vaultHealth.score} onPress={navigateToVault} />
+              <View style={[styles.moduleDivider, { backgroundColor: colors.border }]} />
+              <ModuleHealthBar label="Network Safety" score={breakdown.networkSafety.score} onPress={navigateToNetwork} />
+              <View style={[styles.moduleDivider, { backgroundColor: colors.border }]} />
+              <ModuleHealthBar label="App Risk" score={breakdown.appRisk.score} onPress={navigateToAudit} />
+              <View style={[styles.moduleDivider, { backgroundColor: colors.border }]} />
+              <ModuleHealthBar label="OS Hygiene" score={breakdown.osHygiene.score} />
+              <View style={[styles.moduleDivider, { backgroundColor: colors.border }]} />
+              <ModuleHealthBar label="Breach Status" score={breakdown.breachStatus.score} onPress={navigateToAlerts} />
             </View>
           </View>
         )}
 
         {/* Quick Actions */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Quick Actions
+          </Text>
           <View style={styles.quickActions}>
-            <TouchableOpacity
-              style={styles.quickActionButton}
+            <QuickActionButton
+              emoji="📡"
+              label="Scan Network"
               onPress={handleScanNetwork}
-              accessibilityLabel="Scan network for threats"
-              accessibilityRole="button"
-            >
-              <Text style={styles.quickActionIcon}>📡</Text>
-              <Text style={styles.quickActionLabel}>Scan Network</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionButton}
+              colors={colors}
+            />
+            <QuickActionButton
+              emoji="🔍"
+              label="Check Breaches"
               onPress={handleCheckBreaches}
-              accessibilityLabel="Check for data breaches"
-              accessibilityRole="button"
-            >
-              <Text style={styles.quickActionIcon}>🔍</Text>
-              <Text style={styles.quickActionLabel}>Check Breaches</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionButton}
+              colors={colors}
+            />
+            <QuickActionButton
+              emoji="➕"
+              label="Add Credential"
               onPress={handleAddCredential}
-              accessibilityLabel="Add a new credential to the vault"
-              accessibilityRole="button"
-            >
-              <Text style={styles.quickActionIcon}>➕</Text>
-              <Text style={styles.quickActionLabel}>Add Credential</Text>
-            </TouchableOpacity>
+              colors={colors}
+            />
           </View>
         </View>
 
         {/* Recent Alerts */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Alerts</Text>
-            <TouchableOpacity
-              onPress={navigateToAlerts}
-              accessibilityLabel="View all alerts"
-              accessibilityRole="button"
-            >
-              <Text style={styles.viewAllLink}>View All</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              Recent Alerts
+            </Text>
+            <TouchableOpacity onPress={navigateToAlerts} accessibilityRole="button">
+              <Text style={[styles.viewAllLink, { color: colors.primary }]}>View All</Text>
             </TouchableOpacity>
           </View>
 
           {recentAlerts.length === 0 ? (
-            <View style={styles.emptyAlerts}>
+            <View style={[styles.emptyAlerts, {
+              backgroundColor: `${colors.safe}12`,
+              borderColor: `${colors.safe}30`,
+            }]}>
               <Text style={styles.emptyAlertsIcon}>✅</Text>
-              <Text style={styles.emptyAlertsText}>All Clear</Text>
-              <Text style={styles.emptyAlertsSubtext}>
+              <Text style={[styles.emptyAlertsText, { color: colors.safe }]}>All Clear</Text>
+              <Text style={[styles.emptyAlertsSubtext, { color: colors.textMuted }]}>
                 No active security alerts
               </Text>
             </View>
@@ -388,166 +341,121 @@ export default function DashboardScreen() {
 }
 
 // ---------------------------------------------------------------------------
+// QuickActionButton
+// ---------------------------------------------------------------------------
+
+interface QuickActionButtonProps {
+  emoji: string;
+  label: string;
+  onPress: () => void;
+  colors: ReturnType<typeof useTheme>['colors'];
+}
+
+function QuickActionButton({ emoji, label, onPress, colors }: QuickActionButtonProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.quickActionButton, {
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+      }]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Text style={styles.quickActionIcon}>{emoji}</Text>
+      <Text style={[styles.quickActionLabel, { color: colors.textSecondary }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  loadingText: {
-    color: colors.textMuted,
-    fontSize: 14,
-  },
+  safeArea: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 32 },
 
-  // Header
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  loadingText: { fontSize: 14 },
+
   header: {
-    paddingTop: 16,
-    paddingBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingTop: 20,
+    paddingBottom: 16,
   },
-  headerTitle: {
-    color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  headerSubtitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
+  headerTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.3 },
+  headerSubtitle: { fontSize: 12, marginTop: 3 },
 
-  // Error
   errorBanner: {
-    backgroundColor: `${colors.danger}1A`,
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
-    marginVertical: 8,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: `${colors.danger}40`,
   },
-  errorText: {
-    color: colors.danger,
-    fontSize: 13,
-    textAlign: 'center',
-  },
+  errorText: { fontSize: 13, textAlign: 'center' },
 
-  // Score section
-  scoreSection: {
+  // Score card
+  scoreCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
     alignItems: 'center',
-    paddingVertical: 24,
+    marginBottom: 20,
+    flexDirection: 'row',
+    gap: 24,
   },
-  scoreRing: {
-    marginBottom: 16,
-  },
-  scoreLabelContainer: {
-    alignItems: 'center',
-  },
-  scoreLevel: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  scoreDescription: {
-    color: colors.textMuted,
-    fontSize: 13,
-  },
+  scoreLabelContainer: { flex: 1 },
+  scoreValue: { fontSize: 48, fontWeight: '800', letterSpacing: -1, lineHeight: 52 },
+  scoreLevel: { fontSize: 18, fontWeight: '700', marginTop: 2 },
+  scoreDescription: { fontSize: 12, marginTop: 4 },
 
   // Sections
-  section: {
-    marginBottom: 24,
-  },
+  section: { marginBottom: 20 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  viewAllLink: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10, letterSpacing: -0.1 },
+  viewAllLink: { fontSize: 13, fontWeight: '600' },
 
-  // Module bars
-  moduleList: {
-    gap: 8,
+  // Module card
+  moduleCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 16,
   },
-  moduleBar: {
-    // spacing handled by gap
-  },
+  moduleDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: -16 },
 
   // Quick actions
-  quickActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  quickActions: { flexDirection: 'row', gap: 10 },
   quickActionButton: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
     gap: 6,
   },
-  quickActionIcon: {
-    fontSize: 24,
-  },
-  quickActionLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
+  quickActionIcon: { fontSize: 22 },
+  quickActionLabel: { fontSize: 11, fontWeight: '600', textAlign: 'center' },
 
   // Alerts
-  alertList: {
-    gap: 8,
-  },
-  alertItem: {
-    // spacing handled by gap
-  },
+  alertList: { gap: 8 },
+  alertItem: {},
   emptyAlerts: {
     alignItems: 'center',
-    paddingVertical: 24,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
+    paddingVertical: 28,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.border,
   },
-  emptyAlertsIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  emptyAlertsText: {
-    color: colors.safe,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  emptyAlertsSubtext: {
-    color: colors.textMuted,
-    fontSize: 13,
-  },
+  emptyAlertsIcon: { fontSize: 28, marginBottom: 8 },
+  emptyAlertsText: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  emptyAlertsSubtext: { fontSize: 13 },
 });

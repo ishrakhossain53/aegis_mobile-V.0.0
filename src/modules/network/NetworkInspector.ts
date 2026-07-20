@@ -47,8 +47,16 @@ function loadNetInfo(): NetInfoFetchFn {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const NetInfo = require('@react-native-community/netinfo');
-    return NetInfo.default?.fetch ?? NetInfo.fetch;
+    const fn: NetInfoFetchFn | undefined =
+      NetInfo.default?.fetch ?? NetInfo.fetch;
+    if (typeof fn !== 'function') {
+      throw new Error(
+        'NetInfo.fetch is not a function — unexpected module shape',
+      );
+    }
+    return fn;
   } catch {
+    // Package not installed or unexpected module shape — return a stub
     return async (): Promise<NetInfoState> => ({
       type: 'unknown',
       isConnected: null,
@@ -502,10 +510,11 @@ class NetworkInspectorImpl implements INetworkInspector {
   /**
    * Derive Wi-Fi encryption type heuristically.
    * NetInfo does not expose encryption type directly on all platforms.
+   * Returns undefined when not connected to Wi-Fi.
    */
   private deriveEncryptionType(
     state: NetInfoState,
-  ): NetworkStatus['encryption'] {
+  ): NetworkStatus['encryption'] | undefined {
     if (state.type !== 'wifi') return undefined;
     if (!state.isConnected) return 'none';
     // Conservative heuristic: assume WPA2 for connected networks
@@ -585,9 +594,8 @@ class NetworkInspectorImpl implements INetworkInspector {
 
       return { anomalous: false, indicators: [] };
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
       // Abort = timeout, not necessarily anomalous
-      if (message.includes('AbortError') || message.includes('abort')) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
         return { anomalous: false, indicators: [] };
       }
       // Other errors are not necessarily ARP spoofing
@@ -625,7 +633,7 @@ class NetworkInspectorImpl implements INetworkInspector {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
 
-      if (message.includes('AbortError') || message.includes('abort')) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
         // Timeout — inconclusive
         return { anomalous: false, anomalies: [] };
       }

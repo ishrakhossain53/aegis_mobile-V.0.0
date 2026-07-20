@@ -37,6 +37,8 @@ export type SecurePrefKey =
   | 'threat_intel_api_key'
   /** Base64-encoded 32-byte salt for Master_Key derivation */
   | 'master_key_salt'
+  /** Base64-encoded 32-byte derived master key bytes (for biometric unlock) */
+  | 'master_key_bytes'
   /** Auto-lock timeout in seconds (stored as string) */
   | 'auto_lock_timeout'
   /** Clipboard timeout in seconds (stored as string) */
@@ -47,6 +49,8 @@ export type SecurePrefKey =
   | 'doh_enabled'
   /** Breach check interval in hours (stored as string) */
   | 'breach_check_interval'
+  /** Theme preference: 'dark' | 'light' */
+  | 'theme_mode'
   /** Boolean flag stored as string 'true'/'false' */
   | 'threat_monitoring_enabled';
 

@@ -2,32 +2,20 @@
  * (tabs)/_layout.tsx — Tab Navigator Layout
  *
  * Defines the bottom tab bar for all protected tab screens.
- * This layout is rendered inside the root _layout.tsx Stack, which
- * enforces session lock before this layout is ever shown.
- *
- * Tabs:
- *  - index    → Security Dashboard (🛡️)
- *  - vault    → Credential Vault (🔑)
- *  - network  → Network Safety (📡)
- *  - alerts   → Alerts (🔔)
- *  - audit    → App Audit (🔍)
- *
- * Session activity tracking:
- *  - Each tab press resets the SessionLockService inactivity timer so that
- *    navigating between tabs counts as user interaction (Requirement 2.5).
+ * Responds to dark/light theme changes via ThemeContext.
  *
  * Requirements: 26.1
  */
 
 import React, { useCallback } from 'react';
-import { Text } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { sessionLockService } from '../../services/SessionLockService';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 export default function TabsLayout() {
-  // Reset the session inactivity timer on every tab press so that tab
-  // navigation counts as user interaction (Requirement 2.5).
+  const { colors, isDark } = useTheme();
+
   const handleTabPress = useCallback(() => {
     sessionLockService.resetTimer();
   }, []);
@@ -37,15 +25,24 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
+          backgroundColor: colors.tabBar,
+          borderTopColor: colors.tabBarBorder,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 6,
+          elevation: isDark ? 0 : 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: isDark ? 0 : 0.06,
+          shadowRadius: 8,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
+          letterSpacing: 0.2,
         },
       }}
       screenListeners={{
@@ -56,9 +53,8 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color }) => (
-            // Shield emoji as tab icon — no native icon library dependency
-            <TabIcon emoji="🛡️" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon emoji="🛡️" color={color} focused={focused} />
           ),
           tabBarAccessibilityLabel: 'Security Dashboard tab',
         }}
@@ -67,8 +63,8 @@ export default function TabsLayout() {
         name="vault"
         options={{
           title: 'Vault',
-          tabBarIcon: ({ color }) => (
-            <TabIcon emoji="🔑" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon emoji="🔑" color={color} focused={focused} />
           ),
           tabBarAccessibilityLabel: 'Credential Vault tab',
         }}
@@ -77,8 +73,8 @@ export default function TabsLayout() {
         name="network"
         options={{
           title: 'Network',
-          tabBarIcon: ({ color }) => (
-            <TabIcon emoji="📡" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon emoji="📡" color={color} focused={focused} />
           ),
           tabBarAccessibilityLabel: 'Network Safety tab',
         }}
@@ -87,8 +83,8 @@ export default function TabsLayout() {
         name="alerts"
         options={{
           title: 'Alerts',
-          tabBarIcon: ({ color }) => (
-            <TabIcon emoji="🔔" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon emoji="🔔" color={color} focused={focused} />
           ),
           tabBarAccessibilityLabel: 'Security Alerts tab',
         }}
@@ -97,8 +93,8 @@ export default function TabsLayout() {
         name="audit"
         options={{
           title: 'Audit',
-          tabBarIcon: ({ color }) => (
-            <TabIcon emoji="🔍" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon emoji="🔍" color={color} focused={focused} />
           ),
           tabBarAccessibilityLabel: 'App Permission Audit tab',
         }}
@@ -107,8 +103,8 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => (
-            <TabIcon emoji="⚙️" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon emoji="⚙️" color={color} focused={focused} />
           ),
           tabBarAccessibilityLabel: 'Settings tab',
         }}
@@ -118,26 +114,42 @@ export default function TabsLayout() {
 }
 
 // ---------------------------------------------------------------------------
-// TabIcon helper
+// TabIcon
 // ---------------------------------------------------------------------------
 
-/**
- * Simple emoji-based tab icon.
- * Uses opacity to communicate active/inactive state since emoji characters
- * cannot be tinted with a color prop directly.
- *
- * @param emoji  - The emoji character to display.
- * @param color  - The tint color provided by the Tabs navigator (active or inactive).
- */
-function TabIcon({ emoji, color }: { emoji: string; color: string }) {
-  const isActive = color === colors.primary;
+function TabIcon({
+  emoji,
+  color,
+  focused,
+}: {
+  emoji: string;
+  color: string;
+  focused: boolean;
+}) {
   return (
-    <Text
-      // eslint-disable-next-line react-native/no-inline-styles
-      style={{ fontSize: 20, opacity: isActive ? 1 : 0.5 }}
-      accessibilityElementsHidden
-    >
-      {emoji}
-    </Text>
+    <View style={[tabIconStyles.wrapper, focused && tabIconStyles.wrapperActive]}>
+      <Text
+        style={[tabIconStyles.emoji, { opacity: focused ? 1 : 0.45 }]}
+        accessibilityElementsHidden
+      >
+        {emoji}
+      </Text>
+    </View>
   );
 }
+
+const tabIconStyles = StyleSheet.create({
+  wrapper: {
+    width: 32,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  wrapperActive: {
+    // subtle highlight handled by opacity on emoji
+  },
+  emoji: {
+    fontSize: 19,
+  },
+});
