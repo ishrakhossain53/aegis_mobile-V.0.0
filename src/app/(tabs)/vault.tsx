@@ -31,7 +31,7 @@ type FilterType = 'all' | 'password' | 'passkey' | 'totp' | 'apiKey';
 interface ToastState { visible: boolean; message: string; countdown: number; }
 interface DetailSheetState { visible: boolean; credential: Credential | null; }
 interface AddCredentialForm {
-  title: string; username: string; password: string; url: string; type: Credential['type'];
+  title: string; username: string; password: string; apiKey: string; url: string; type: Credential['type'];
 }
 
 const FILTER_CHIPS: { key: FilterType; label: string }[] = [
@@ -52,7 +52,7 @@ export default function VaultScreen() {
   const [detailSheet, setDetailSheet] = useState<DetailSheetState>({ visible: false, credential: null });
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState<AddCredentialForm>({
-    title: '', username: '', password: '', url: '', type: 'password',
+    title: '', username: '', password: '', apiKey: '', url: '', type: 'password',
   });
   const [isSaving, setIsSaving] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -62,16 +62,30 @@ export default function VaultScreen() {
 
   const loadCredentials = useCallback(async () => {
     setIsLoading(true);
-    try {
-      const all = await vaultService.getAllCredentials();
-      setCredentials(all);
-    } catch {
-      setCredentials([]);
-    } finally {
-      setIsLoading(false);
-    }
+    let attempts = 0;
+    const maxAttempts = 10;
+    const tryLoad = async (): Promise<void> => {
+      try {
+        const all = await vaultService.getAllCredentials();
+        console.log('[Vault] loadCredentials — count:', all.length);
+        setCredentials(all);
+        setIsLoading(false);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('master key is not set') && attempts < maxAttempts) {
+          attempts++;
+          await new Promise<void>((r) => setTimeout(r, 300));
+          return tryLoad();
+        }
+        console.error('[Vault] loadCredentials failed:', err);
+        setCredentials([]);
+        setIsLoading(false);
+      }
+    };
+    return tryLoad();
   }, []);
 
+  // Load on mount — retries automatically if master key isn't set yet
   useEffect(() => { void loadCredentials(); }, [loadCredentials]);
 
   // ── Filter + search ───────────────────────────────────────────────────────
@@ -130,7 +144,7 @@ export default function VaultScreen() {
     handleInteraction();
     try {
       const full = await vaultService.getCredential(credential.id);
-      setDetailSheet({ visible: true, credential: full });
+      setDetailSheet({ visible: true, credential: full ?? credential });
     } catch {
       setDetailSheet({ visible: true, credential });
     }
@@ -154,33 +168,53 @@ export default function VaultScreen() {
     ]);
   }, [handleInteraction]);
 
-  const handleCopy = useCallback((_credential: Credential) => {
+  const handleCopy = useCallback(async (credential: Credential) => {
     handleInteraction();
-    showClipboardToast();
+    try {
+      // Fetch the full decrypted credential to get the actual secret value
+      const full = await vaultService.getCredential(credential.id);
+      if (!full) return;
+      const valueToCopy = full.type === 'apiKey' ? full.apiKey : full.password;
+      if (valueToCopy) {
+        await vaultService.copyToClipboard(valueToCopy);
+        showClipboardToast();
+      }
+    } catch {
+      // fall through — toast not shown if copy fails
+    }
   }, [handleInteraction, showClipboardToast]);
 
   // ── Add credential ────────────────────────────────────────────────────────
 
   const handleAddCredential = useCallback(async () => {
-    if (!addForm.title.trim() || !addForm.password.trim()) {
-      Alert.alert('Validation Error', 'Title and password are required.');
+    if (!addForm.title.trim()) {
+      Alert.alert('Validation Error', 'Title is required.');
+      return;
+    }
+    const isApiKey = addForm.type === 'apiKey';
+    const secretValue = isApiKey ? addForm.apiKey.trim() : addForm.password.trim();
+    if (!secretValue) {
+      Alert.alert('Validation Error', isApiKey ? 'API Key is required.' : 'Password is required.');
       return;
     }
     setIsSaving(true);
     try {
-      await vaultService.addCredential({
+      const id = await vaultService.addCredential({
         type: addForm.type,
         title: addForm.title.trim(),
         username: addForm.username.trim() || undefined,
-        password: addForm.password.trim() || undefined,
+        password: !isApiKey ? secretValue : undefined,
+        apiKey: isApiKey ? secretValue : undefined,
         url: addForm.url.trim() || undefined,
         tags: [],
         favorite: false,
       });
-      setAddForm({ title: '', username: '', password: '', url: '', type: 'password' });
+      console.log('[Vault] addCredential succeeded, id:', id);
+      setAddForm({ title: '', username: '', password: '', apiKey: '', url: '', type: 'password' });
       setShowAddModal(false);
       await loadCredentials();
     } catch (err) {
+      console.error('[Vault] addCredential failed:', err);
       Alert.alert('Error', err instanceof Error ? err.message : 'Failed to save credential.');
     } finally {
       setIsSaving(false);
@@ -335,10 +369,12 @@ export default function VaultScreen() {
                 <DetailRow label="URL" value={detailSheet.credential.url} colors={colors} />
               )}
               {detailSheet.credential.password && (
-                <DetailRow label="Password" value="••••••••••••" sensitive colors={colors} />
+                <DetailRow label="Password" value="••••••••••••" sensitive colors={colors}
+                  onCopy={() => handleCopy(detailSheet.credential!)} />
               )}
               {detailSheet.credential.apiKey && (
-                <DetailRow label="API Key" value="••••••••••••" sensitive colors={colors} />
+                <DetailRow label="API Key" value="••••••••••••" sensitive colors={colors}
+                  onCopy={() => handleCopy(detailSheet.credential!)} />
               )}
               {detailSheet.credential.tags.length > 0 && (
                 <DetailRow label="Tags" value={detailSheet.credential.tags.join(', ')} colors={colors} />
@@ -376,15 +412,48 @@ export default function VaultScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled">
+              {/* Type selector */}
+              <Text style={[formStyles.label, { color: colors.textSecondary, marginBottom: 8 }]}>Type</Text>
+              <View style={[styles.typeSelector, { marginBottom: 16 }]}>
+                {(['password', 'apiKey'] as const).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[
+                      styles.typeChip,
+                      { backgroundColor: colors.surface, borderColor: colors.border },
+                      addForm.type === t && { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    onPress={() => setAddForm((f) => ({ ...f, type: t }))}
+                    accessibilityLabel={`Type: ${t === 'apiKey' ? 'API Key' : 'Password'}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: addForm.type === t }}
+                  >
+                    <Text style={[
+                      styles.typeChipText,
+                      { color: colors.textSecondary },
+                      addForm.type === t && { color: '#FFFFFF' },
+                    ]}>
+                      {t === 'apiKey' ? 'API Key' : 'Password'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
               <FormField label="Title *" value={addForm.title}
                 onChangeText={(v) => setAddForm((f) => ({ ...f, title: v }))}
                 placeholder="e.g. Gmail" colors={colors} />
               <FormField label="Username" value={addForm.username}
                 onChangeText={(v) => setAddForm((f) => ({ ...f, username: v }))}
                 placeholder="e.g. user@example.com" autoCapitalize="none" colors={colors} />
-              <FormField label="Password *" value={addForm.password}
-                onChangeText={(v) => setAddForm((f) => ({ ...f, password: v }))}
-                placeholder="Enter password" secureTextEntry colors={colors} />
+              {addForm.type === 'apiKey' ? (
+                <FormField label="API Key *" value={addForm.apiKey}
+                  onChangeText={(v) => setAddForm((f) => ({ ...f, apiKey: v }))}
+                  placeholder="Enter API key" secureTextEntry autoCapitalize="none" colors={colors} />
+              ) : (
+                <FormField label="Password *" value={addForm.password}
+                  onChangeText={(v) => setAddForm((f) => ({ ...f, password: v }))}
+                  placeholder="Enter password" secureTextEntry colors={colors} />
+              )}
               <FormField label="URL" value={addForm.url}
                 onChangeText={(v) => setAddForm((f) => ({ ...f, url: v }))}
                 placeholder="https://example.com" autoCapitalize="none" keyboardType="url" colors={colors} />
@@ -415,12 +484,20 @@ import { ThemeColors } from '../../theme/colors';
 
 interface DetailRowProps {
   label: string; value: string; sensitive?: boolean;
+  onCopy?: () => void;
   colors: ThemeColors;
 }
 
-const DetailRow: React.FC<DetailRowProps> = ({ label, value, sensitive, colors }) => (
+const DetailRow: React.FC<DetailRowProps> = ({ label, value, sensitive, onCopy, colors }) => (
   <View style={[detailStyles.row, { borderBottomColor: colors.border }]}>
-    <Text style={[detailStyles.label, { color: colors.textMuted }]}>{label}</Text>
+    <View style={detailStyles.rowHeader}>
+      <Text style={[detailStyles.label, { color: colors.textMuted }]}>{label}</Text>
+      {onCopy && (
+        <TouchableOpacity onPress={onCopy} accessibilityLabel={`Copy ${label}`} accessibilityRole="button">
+          <Text style={[detailStyles.copyBtn, { color: colors.primary }]}>Copy</Text>
+        </TouchableOpacity>
+      )}
+    </View>
     <Text
       style={[
         detailStyles.value,
@@ -528,11 +605,19 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: { opacity: 0.5 },
   saveButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  typeSelector: { flexDirection: 'row', gap: 8 },
+  typeChip: {
+    flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  typeChipText: { fontSize: 14, fontWeight: '600' },
 });
 
 const detailStyles = StyleSheet.create({
   row: { paddingVertical: 14, borderBottomWidth: 1 },
-  label: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 },
+  rowHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  label: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
+  copyBtn: { fontSize: 12, fontWeight: '700' },
   value: { fontSize: 15 },
 });
 

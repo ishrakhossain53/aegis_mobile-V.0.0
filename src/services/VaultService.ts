@@ -458,7 +458,13 @@ export class VaultServiceImpl implements IVaultService {
       'SELECT * FROM credentials ORDER BY updated_at DESC',
     );
 
-    return Promise.all(rows.map((row) => this.rowToCredential(row)));
+    const results = await Promise.allSettled(
+      rows.map((row) => this.rowToCredential(row)),
+    );
+
+    return results
+      .filter((r): r is PromiseFulfilledResult<Credential> => r.status === 'fulfilled')
+      .map((r) => r.value);
   }
 
   // -------------------------------------------------------------------------
