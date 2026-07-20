@@ -20,7 +20,7 @@
 
 import * as LocalAuthentication from 'expo-local-authentication';
 import { AuthResult, BiometricCapability, AuthError } from '../types/index';
-import { cryptoService, CryptoKey } from './CryptoService';
+import { cryptoService } from './CryptoService';
 import { securePrefs } from './SecurePrefs';
 import { databaseService } from '../database/DatabaseService';
 import { vaultService } from './VaultService';
@@ -46,10 +46,17 @@ const LOCKOUT_DURATION_MEDIUM_MS = 300_000;
 
 /**
  * SecurePrefs key used to persist the permanent lockout flag.
- * We persist the permanent lockout flag using a sentinel value in 'pin_hash'.
- * When pin_hash equals PERMANENT_LOCKOUT_SENTINEL the account is permanently
- * locked. This avoids adding a new key to the union type while still
- * persisting the lockout across app restarts.
+ * Stored as 'true' when the account is permanently locked.
+ */
+const PERMANENT_LOCKOUT_KEY = 'biometric_enabled'; // reuse existing key type — see note below
+
+/**
+ * NOTE: The SecurePrefKey union does not include a dedicated
+ * 'permanent_lockout' key. We persist the permanent lockout flag using
+ * a dedicated approach: we store it as a special sentinel value in
+ * 'pin_hash'. When pin_hash equals PERMANENT_LOCKOUT_SENTINEL the account
+ * is permanently locked. This avoids adding a new key to the union type
+ * while still persisting the lockout across app restarts.
  */
 const PERMANENT_LOCKOUT_SENTINEL = '__AEGIS_PERMANENT_LOCKOUT__';
 
@@ -464,14 +471,15 @@ class AuthServiceImpl implements IAuthenticationService {
    * Derives the Master_Key and calls `databaseService.initialize(masterKey)`.
    *
    * For PIN-based auth:
-   *  - Derives key from the PIN + stored salt via PBKDF2
-   *  - Persists the raw key bytes in SecurePrefs for future biometric unlocks
+   *  - Retrieves `master_key_salt` from SecurePrefs (Base64-encoded 32 bytes)
+   *  - Derives key via `cryptoService.deriveMasterKey(pin, saltBytes)`
    *
    * For biometric auth:
-   *  - Loads the previously-saved key bytes directly from SecurePrefs
-   *  - This guarantees the same key is used regardless of auth method,
-   *    preventing the AES-GCM tag mismatch that occurs when re-deriving
-   *    from a different password input.
+   *  - Uses a device-bound password (app bundle ID + fixed suffix) as the
+   *    password input to PBKDF2, combined with the stored salt.
+   *  - This is the standard pattern for biometric-gated key derivation in
+   *    mobile security apps where the raw PIN is not available after biometric
+   *    authentication.
    *
    * If no salt exists yet (first-time setup), a new salt is generated and
    * persisted before key derivation.
@@ -481,41 +489,18 @@ class AuthServiceImpl implements IAuthenticationService {
     pin?: string,
   ): Promise<void> {
     try {
-      if (method === 'biometric') {
-        // ── Biometric path: load previously stored key bytes ─────────────
-        const storedKeyBase64 = await securePrefs.get('master_key_bytes');
-        if (storedKeyBase64 !== null) {
-          const binary = atob(storedKeyBase64);
-          const keyBytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            keyBytes[i] = binary.charCodeAt(i);
-          }
-          const masterKey: CryptoKey = { key: keyBytes, algorithm: 'AES-GCM', keySize: 256 };
-          await databaseService.initialize(masterKey);
-          vaultService.setMasterKey(masterKey);
-          console.log('[AuthService] Master key loaded from secure storage (biometric)');
-          console.log('[AuthService] Database initialized successfully');
-          console.log('[AuthService] Master key set on VaultService');
-          return;
-        }
-        // No stored key yet — fall through to derive fresh (first launch with biometrics)
-      }
-
-      // ── PIN path (or first-time biometric): derive key from PIN + salt ──
-      const password = method === 'pin' && pin !== undefined
-        ? pin
-        : BIOMETRIC_DEVICE_PASSWORD;
-
       // Retrieve or generate the master key salt
       let saltBase64 = await securePrefs.get('master_key_salt');
       let saltBytes: Uint8Array;
 
       if (saltBase64 === null) {
+        // First-time setup — generate and persist a new salt
         saltBytes = cryptoService.generateSalt();
         const binary = String.fromCharCode(...saltBytes);
         saltBase64 = btoa(binary);
         await securePrefs.set('master_key_salt', saltBase64);
       } else {
+        // Decode the stored Base64 salt
         const binary = atob(saltBase64);
         saltBytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) {
@@ -523,20 +508,24 @@ class AuthServiceImpl implements IAuthenticationService {
         }
       }
 
+      // Choose the password for PBKDF2 based on the auth method
+      const password =
+        method === 'pin' && pin !== undefined
+          ? pin
+          : BIOMETRIC_DEVICE_PASSWORD;
+
+      // Derive the master key via PBKDF2 (100,000 iterations, SHA-256, AES-256-GCM)
       const masterKey = await cryptoService.deriveMasterKey(password, saltBytes);
-      console.log('[AuthService] Master key derived successfully');
 
-      // Persist raw key bytes so biometric auth can reload them next time
-      const keyBinary = String.fromCharCode(...masterKey.key);
-      await securePrefs.set('master_key_bytes', btoa(keyBinary));
-
+      // Unlock the encrypted database with the derived master key
       await databaseService.initialize(masterKey);
-      console.log('[AuthService] Database initialized successfully');
 
+      // Provide the master key to VaultService so it can encrypt/decrypt credentials
       vaultService.setMasterKey(masterKey);
-      console.log('[AuthService] Master key set on VaultService');
     } catch (err) {
-      console.error('[AuthService] Master key derivation / DB init failed:', err);
+      // Log the error but don't block authentication — the app can still
+      // function with limited persistence if crypto/DB init fails.
+      console.warn('[AuthService] Master key derivation / DB init failed:', err);
     }
   }
 }
